@@ -20,7 +20,7 @@ npm run build
 npm run preview
 ~~~
 
-The static build is in dist/. Supplier confirmation emails require a shareable HTTPS deployment; localhost is suitable for staff review but is not reachable by supplier email recipients. No public hosting has been configured.
+The static build is in dist/. Supplier confirmation emails require a shareable HTTPS deployment; localhost is suitable for staff review but is not reachable by supplier email recipients. The repository includes vercel.json with dist as the output directory.
 
 ## Live backend
 
@@ -36,7 +36,11 @@ Supplier500 + PaySME markup20 = customer520. A store reference600 gives an80 sav
 
 ## Integration boundary
 
-The Vendor app, wallets and utilities tables remain unchanged. Paid-sale creation is an internal-only database operation; no staff or supplier Edge route can create a paid sale. The final Vendor integration must atomically debit its existing wallet ledger and register the sale/voucher with an idempotency key. Existing utilities history/customer linking and opt-in promotions are also deferred to that separate phase.
+The Vendor app, wallets and utilities tables remain unchanged. Paid-sale creation is an internal-only database operation; no staff or supplier Edge route can create a paid sale. The final Vendor integration must atomically debit its existing wallet ledger and register the sale/voucher with an idempotency key. Customer records in this portal are for PaySME vouchers only. Electricity, water, airtime and other third-party VAS products are outside this programme; do not import their purchase history into this directory.
+
+## Customer and company views
+
+Customers opens a voucher-only directory with individual customer contact records and paginated voucher purchase histories across suppliers. Sales, Settlements and Reports have an All companies / individual company selector. Company filters apply in the database before list limits, and reports aggregate the full selected dataset. Historical inactive suppliers remain selectable.
 
 ## References
 
@@ -45,3 +49,4 @@ The Vendor app, wallets and utilities tables remain unchanged. Paid-sale creatio
 - [Delivery phases](docs/PHASES.md)
 - [Verification status](docs/BUILD_STATUS.md)
 - [SQL scripts](sql/README.md)
+

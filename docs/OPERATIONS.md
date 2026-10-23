@@ -37,4 +37,13 @@ Run `sql/09_verify_operations.sql` for read-only deployment checks and `sql/08_t
 
 Identity fingerprints use a random database-private HMAC key. Raw ID numbers are never stored in voucher tables. Recipient contact snapshots and OTP/token digests are in a private schema without API grants or client RLS policies. The private schema's informational 'RLS enabled, no policy' advisory is intentional deny-by-default behavior. Never grant browser access to these tables.
 
-No production supplier notification has been sent during development. A real email/SMS delivery pilot and browser/printer checks are still required before a live launch. Vendor app changes, wallet debits, utilities history linking and promotional audiences remain the explicitly separate final phase.
+No production supplier notification has been sent during development. A real email/SMS delivery pilot and browser/printer checks are still required before a live launch. Vendor app changes and wallet debits remain the explicitly separate integration work. Third-party VAS customer histories are outside this voucher programme and must not be imported into these customer views.
+
+## Customer and company views
+
+Customers is exclusively for the PaySME voucher programme. The staff-only directory includes profiles with voucher-sale records; VAS-only profiles are excluded. Select a customer to open their contact profile, lifetime voucher purchase counts, paid voucher value and redeemed count, plus paginated voucher history across supplier companies. The history shows sale number, product, supplier, voucher/status, collection town/store, payment order and receipt. Refunded/cancelled records remain visible; paid value counts only sales currently marked paid. The list masks mobile numbers; the staff-only individual record shows contact details. Raw IDs and OTPs are never included.
+
+Sales, Settlements and Reports default to All companies. Selecting a company applies a shared filter across these three tabs; select All companies to restore the combined view. Inactive suppliers remain selectable for historical review. Lists load up to 1,000 records after supplier filtering; report totals and planning include the full selected dataset. Company changes hide the old rows while the new results load. Customer pages are independent of that finance filter and always show that customer's voucher history across companies.
+
+The additional read-only migration is sql/10_voucher_customer_company_views.sql (already applied). sql/11_test_customer_company_views.sql is its complete rollback-only integration test. No wallet, Vendor app or existing transaction-writing function is modified by this change.
+

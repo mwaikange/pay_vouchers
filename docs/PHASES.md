@@ -10,6 +10,9 @@
 
 Local staff review: http://127.0.0.1:4173 when the preview server is running. Supplier emails need a public HTTPS portal deployment. Source is in https://github.com/mwaikange/pay_vouchers.
 
-The final integration must inspect the existing wallet ledger and use one database transaction for debit, commission posting, sale/voucher registration and retry protection. Collect recipient name, normalized mobile, email, ID and town plus planned branch. Phone matching creates a provisional customer association; it does not verify identity or grant marketing consent.
+The final integration must inspect the existing wallet ledger and use one database transaction for debit, commission posting, sale/voucher registration and retry protection. Collect recipient name, normalized mobile, email, ID and town plus planned branch. Phone matching creates a provisional voucher-customer association; it does not verify identity or grant marketing consent. Customers in this portal belong to the PaySME voucher programme only. Do not import or display electricity, water, airtime or other third-party VAS purchase history here.
 
 Current batch identifiers are PV-BATCH-number, shown alongside supplier name. Voucher codes use PAD plus96 random bits; confirmation and supplier credentials use256 random bits.
+
+Customer and company views: voucher buyers have searchable, paginated individual records with voucher histories across suppliers. Sales, Settlements and Reports share an All companies / individual company selector. Server-side supplier filtering happens before list limits, and report totals cover the entire selected company's records.
+

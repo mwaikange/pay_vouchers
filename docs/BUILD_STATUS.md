@@ -19,3 +19,12 @@ Not yet verified: actual browser login/rendering/image upload, external supplier
 The Vendor app, its wallets and utilities tables remain untouched. The final wallet purchase and utility-customer integration is a separate next step after portal review. Paid-sale creation is not exposed through the Edge API.
 
 Local preview started and retained at http://127.0.0.1:4173. The server reported a successful bind; this runtime blocks outbound localhost sockets, so HTTP/browser verification from the agent remains unavailable.
+
+
+Customer/company view update (23 October 2026):
+- Voucher-only directory and individual customer records with complete, paginated voucher histories; no VAS-only profiles, raw IDs or OTPs returned.
+- Shared All companies / individual company selector on Sales, Settlements and Reports. Supplier filtering runs before row limits; report totals cover the full selected company.
+- Additive SECURITY INVOKER RPC migration applied. Existing overview and sale/wallet-writing functions were not changed.
+- Rollback-only staff/RLS test passed for two companies, cross-company customer history, VAS exclusion, mobile masking, pagination and per-company amounts/redemptions/planning. All fixtures rolled back.
+- Local suite:21 passed,0 failed,0 skipped; static build and syntax checks passed. New function security-advisor findings:none.
+- Browser interaction and production Vercel deployment of this update remain unverified.

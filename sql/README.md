@@ -13,3 +13,6 @@ Financial tables allow staff reads through RLS and no direct browser writes. The
 No Vendor app, wallet, utilities table or Auth configuration is changed. Do not deploy the local Auth config to the shared project. See docs/OPERATIONS.md and docs/SUPPLIER_API.md.
 
 Migration history: the foundation was applied manually before connector access and is not registered in Supabase migration history. Later migration filenames match the server-recorded versions. Do not run `supabase db push` or rerun the foundation against this shared project until that baseline is reconciled through a reviewed migration procedure. No migration-history records were changed.
+
+
+Voucher customer/company views were applied through migration 20261023150601_voucher_customer_company_views. Script10 is the SQL Editor copy; do not rerun it. Script11 tests voucher-only membership, customer pagination, per-company finance totals and staff authorization using rollback-only fixtures. The existing overview RPC and all transaction-writing functions are unchanged.
