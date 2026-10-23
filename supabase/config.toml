@@ -1,0 +1,8 @@
+project_id = "paysme-vouchers"
+
+[db]
+major_version = 17
+
+[auth]
+enabled = true
+enable_signup = false
