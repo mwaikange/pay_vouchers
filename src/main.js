@@ -15,9 +15,26 @@ const canWrite = () => state.staff && state.staff.role !== 'viewer';
 const canManageSuppliers = () => state.staff?.role === 'admin';
 const supplierName = id => state.suppliers.find(s => s.id === id)?.business_name || 'Supplier';
 const badge = active => `<span class="badge ${active ? 'green' : ''}">${active ? 'Active' : 'Inactive'}</span>`;
-const field = (label, name, value = '', type = 'text', required = false) => `<label>${esc(label)}<input name="${name}" type="${type}" value="${esc(value)}" ${required ? 'required' : ''} ${type === 'number' ? 'min="0" step="0.01"' : ''}></label>`;
+const pricingHelp = {
+  "supplier": "The agreed supplier price before any additional rebate, inclusive of VAT. Example: N$500. If this already includes every supplier discount, leave the separate rebate at zero.",
+  "markup": "The VAT-inclusive amount added to the supplier base price to set the customer price. Supplier N$500 + markup N$20 = customer N$520. Vendor commission and other costs reduce what PaySME retains.",
+  "instore": "The normal VAT-inclusive store price for the same product. It is used to show the customer saving, not to calculate supplier payment. Store N$600 minus customer N$520 = saving N$80.",
+  "rebate": "An additional VAT-inclusive discount or rebate agreed with the supplier, separate from the base price and markup. Do not enter a discount twice. Example: a further N$10 rebate on a N$500 base price.",
+  "rebate_timing": "Earned / received later: pay the supplier N$500 now and claim or receive the N$10 rebate later. Deduct from settlement: pay N$490 now. Neither option changes the customer price.",
+  "commission": "The VAT-inclusive amount the selling vendor earns per voucher. It is recorded separately and does not automatically increase the customer price. A N$20 markup less N$5 commission leaves PaySME N$15 before other costs and any rebate.",
+  "entitlement_type": "Specified product / combo: the voucher is exchanged for the listed products. Store credit: the voucher provides a defined amount to spend at the supplier. Store credit value is entered separately from the customer purchase price.",
+  "redemption_value": "For store-credit vouchers only: the VAT-inclusive shopping value the customer can spend. Example: N$600 store credit sold for N$520. Leave this blank for a specified product or combo; its normal store price does not automatically become cash credit."
+};
+function labeledControl(label, name, control) {
+  const help = pricingHelp[name];
+  if (!help) return `<label>${esc(label)}${control}</label>`;
+  const id = `editor-${name}`, helpId = `${id}-help`;
+  const input = control.replace(/^<(input|select)/, tag => `${tag} id="${id}" aria-describedby="${helpId}"`);
+  return `<div class="help-field"><div class="field-heading"><label for="${id}">${esc(label)}</label><button type="button" class="info-button" data-field-help aria-expanded="false" aria-controls="${helpId}" aria-label="Explain ${esc(label)}" title="${esc(help)}"><span aria-hidden="true">i</span></button></div>${input}<p class="field-help" id="${helpId}" hidden>${esc(help)}</p></div>`;
+}
+const field = (label, name, value = '', type = 'text', required = false) => labeledControl(label, name, `<input name="${name}" type="${type}" value="${esc(value)}" ${required ? 'required' : ''} ${type === 'number' ? 'min="0" step="0.01"' : ''}>`);
 const textArea = (label, name, value = '') => `<label class="wide">${esc(label)}<textarea name="${name}" rows="3">${esc(value)}</textarea></label>`;
-const select = (label, name, options, current = '') => `<label>${esc(label)}<select name="${name}" required>${options.map(([value, title]) => `<option value="${esc(value)}" ${value === current ? 'selected' : ''}>${esc(title)}</option>`).join('')}</select></label>`;
+const select = (label, name, options, current = '') => labeledControl(label, name, `<select name="${name}" required>${options.map(([value, title]) => `<option value="${esc(value)}" ${value === current ? 'selected' : ''}>${esc(title)}</option>`).join('')}</select>`);
 const statusField = active => select('Status', 'active', [['true', 'Active'], ['false', 'Inactive']], String(active ?? true));
 
 function showLogin(message = '') {
@@ -83,7 +100,7 @@ function suppliers() {
   return `<section class="panel"><div class="section-heading"><div><h2>Supplier directory</h2><p>Manage businesses and payment approval contacts.</p></div><button data-action="supplier" ${canWrite() ? '' : 'disabled'}>+ Add supplier</button></div><div class="table-wrap"><table><thead><tr><th>Business</th><th>Finance confirmation</th><th>Supervisor approval</th><th>Status</th><th></th></tr></thead><tbody>${state.suppliers.map(s => `<tr><td><b>${esc(s.business_name)}</b><small>SUP-${s.supplier_no}</small></td><td>${esc(s.finance_email)}</td><td>${esc(s.supervisor_email)}</td><td>${badge(s.active)}</td><td><button class="text-button" data-action="supplier" data-id="${s.id}">${canWrite() ? 'Edit' : 'View'}</button></td></tr>`).join('') || '<tr><td colspan="5" class="empty">Add your first supplier to start building the catalogue.</td></tr>'}</tbody></table></div></section><section class="panel"><div class="section-heading"><div><h2>Branches & towns</h2><p>Collection locations for supplier planning.</p></div><button class="secondary" data-action="branch" ${canWrite() && state.suppliers.length ? '' : 'disabled'}>+ Add branch</button></div><div class="branch-list">${state.branches.map(b => `<button class="branch" data-action="branch" data-id="${b.id}"><b>${esc(b.name)}</b><span>${esc(supplierName(b.supplier_id))} · ${esc(b.town)}</span>${badge(b.active)}</button>`).join('') || '<p class="empty">No branches added yet.</p>'}</div></section>`;
 }
 function products() {
-  return `<section><div class="section-heading"><div><h2>Product catalogue</h2><p>Prices include the PaySME markup. Rebates are recorded separately.</p></div><button data-action="product" ${canWrite() && state.suppliers.length ? '' : 'disabled'}>+ Add product</button></div><div class="products">${state.products.map(p => {
+  return `<section><div class="section-heading"><div><h2>Product catalogue</h2><p>All prices include VAT and the PaySME markup. Rebates are recorded separately.</p></div><button data-action="product" ${canWrite() && state.suppliers.length ? '' : 'disabled'}>+ Add product</button></div><div class="products">${state.products.map(p => {
     const picture = state.images.find(i => i.product_id === p.id);
     const pictureUrl = picture && db.storage.from('paysme-voucher-products').getPublicUrl(picture.object_path).data.publicUrl;
     return `<article class="product-card">${pictureUrl ? `<img src="${esc(pictureUrl)}" alt="${esc(picture.alt_text || p.name)}" loading="lazy">` : '<div class="product-placeholder">PaySME<span>VOUCHERS</span></div>'}<div class="product-body"><div class="section-heading"><small>${esc(supplierName(p.supplier_id))} · #${p.product_no}</small>${badge(p.active)}</div><h3>${esc(p.name)}</h3><p>${esc(p.product_list || p.description || 'No description yet.')}</p><strong>${money(p.customer_price_cents)}</strong><div class="price-meta"><span>In store ${money(p.instore_price_cents)}</span><span>${p.instore_price_cents >= p.customer_price_cents ? 'Save ' + money(p.instore_price_cents - p.customer_price_cents) : 'Above reference price'}</span></div><div class="card-actions"><button class="secondary" data-action="product" data-id="${p.id}">${canWrite() ? 'Edit product' : 'View product'}</button>${canWrite() ? `<button class="text-button" data-action="image" data-id="${p.id}">Add picture</button>` : ''}</div></div></article>`;
@@ -94,7 +111,7 @@ function customers() {
 }
 function render() {
   const pages = { overview, suppliers, products, customers, sales:()=>salesPage(state), settlements:()=>settlementsPage(state), reports:()=>reportsPage(state) };
-  root.innerHTML = `<div class="workspace"><aside><div class="brand">P<span>▰</span> PaySME<small>VOUCHERS</small></div><div class="nav-label">WORKSPACE</div><nav>${Object.keys(pages).map(page => `<button data-page="${page}" class="${state.page === page ? 'selected' : ''}">${{ overview: '◈', suppliers: '▦', products: '▱', customers: '◎' }[page]||'•'} <span>${page[0].toUpperCase() + page.slice(1)}</span></button>`).join('')}</nav><div class="sidebar-note"><b>Made for everyday value.</b><p>Powered by PaySME</p></div></aside><div class="content"><header><div><span class="eyebrow">PAYSME VOUCHERS</span><h1>${state.page[0].toUpperCase() + state.page.slice(1)}</h1></div><div class="account"><span><b>${esc(state.staff.display_name)}</b><small>${esc(state.staff.role)}</small></span><button class="secondary" id="signout">Sign out</button></div></header><main>${state.notice ? `<p class="notice" role="status">${esc(state.notice)}</p>` : ''}${pages[state.page]()}</main></div></div>`;
+  root.innerHTML = `<div class="workspace"><aside><div class="brand">P<span>▰</span> PaySME<small>VOUCHERS</small></div><div class="nav-label">WORKSPACE</div><nav>${Object.keys(pages).map(page => `<button data-page="${page}" class="${state.page === page ? 'selected' : ''}">${{ overview: '◈', suppliers: '▦', products: '▱', customers: '◎' }[page]||'•'} <span>${page[0].toUpperCase() + page.slice(1)}</span></button>`).join('')}</nav><div class="sidebar-note"><b>Made for everyday value.</b><p>Powered by PaySME</p></div></aside><div class="content"><header><div><span class="eyebrow">PAYSME VOUCHERS</span><h1>${state.page[0].toUpperCase() + state.page.slice(1)}</h1></div><div class="account"><span><b>${esc(state.staff.display_name)}</b><small>${esc(state.staff.role)}</small></span><button class="secondary" id="signout">Sign out</button></div></header><main><p class="currency-note">All monetary amounts are in N$ and inclusive of VAT. No additional VAT is added.</p>${state.notice ? `<p class="notice" role="status">${esc(state.notice)}</p>` : ''}${pages[state.page]()}</main></div></div>`;
   document.querySelectorAll('[data-page]').forEach(button => { button.onclick = () => { state.page = button.dataset.page; state.notice = ''; render(); }; });
   document.querySelectorAll('[data-action]').forEach(button => {
     if (button.dataset.action === 'supplier' && !canManageSuppliers()) {
@@ -118,7 +135,7 @@ function openEditor(kind, id) {
   } else if (kind === 'product') {
     data = state.products.find(p => p.id === id) || {}; table = 'paysme_voucher_products';
     const price = name => data[name] === undefined ? '0.00' : (Number(data[name]) / 100).toFixed(2);
-    body = select('Supplier', 'supplier_id', supplierOptions, data.supplier_id) + field('Product name', 'name', data.name, 'text', true) + select('Customer entitlement', 'entitlement_type', [['product_bundle', 'Specified product / combo'], ['store_credit', 'Store credit']], data.entitlement_type || 'product_bundle') + statusField(data.active) + textArea('Description', 'description', data.description) + textArea('Product list / contents', 'product_list', data.product_list) + field('Supplier base price (N$)', 'supplier', price('supplier_price_cents'), 'number', true) + field('PaySME markup (N$)', 'markup', price('markup_cents'), 'number', true) + field('In-store reference price (N$)', 'instore', price('instore_price_cents'), 'number', true) + field('Supplier rebate (N$)', 'rebate', price('rebate_cents'), 'number', true) + select('Rebate treatment', 'rebate_timing', [['later', 'Earned / received later'], ['immediate', 'Deduct from settlement']], data.rebate_timing || 'later') + field('Vendor commission (N$)', 'commission', price('vendor_commission_cents'), 'number', true) + '<p class="notice wide" id="price-preview"></p>';
+    body = '<p class="notice wide">All amounts entered below are inclusive of VAT. Do not add VAT again. Select an i button for an explanation.</p>' + select('Supplier', 'supplier_id', supplierOptions, data.supplier_id) + field('Product name', 'name', data.name, 'text', true) + select('Customer entitlement', 'entitlement_type', [['product_bundle', 'Specified product / combo'], ['store_credit', 'Store credit']], data.entitlement_type || 'product_bundle') + statusField(data.active) + textArea('Description', 'description', data.description) + textArea('Product list / contents', 'product_list', data.product_list) + field('Supplier base price (N$)', 'supplier', price('supplier_price_cents'), 'number', true) + field('PaySME markup (N$)', 'markup', price('markup_cents'), 'number', true) + field('In-store reference price (N$)', 'instore', price('instore_price_cents'), 'number', true) + field('Supplier rebate (N$)', 'rebate', price('rebate_cents'), 'number', true) + select('Rebate treatment', 'rebate_timing', [['later', 'Earned / received later'], ['immediate', 'Deduct from settlement']], data.rebate_timing || 'later') + field('Vendor commission (N$)', 'commission', price('vendor_commission_cents'), 'number', true) + '<p class="notice wide" id="price-preview"></p>';
     body += field('Store credit value (N$, required only for store credit)', 'redemption_value', data.redemption_value_cents ? (Number(data.redemption_value_cents) / 100).toFixed(2) : '', 'number');
   } else if (kind === 'image') {
     body = '<p class="wide">Catalogue pictures only. JPEG, PNG or WebP, up to 5 MB.</p><label class="wide">Picture<input name="image" type="file" accept="image/jpeg,image/png,image/webp" required></label>' + field('Picture description', 'alt_text', '', 'text', true);
@@ -130,11 +147,18 @@ function openEditor(kind, id) {
   dialog.addEventListener('close', () => dialog.remove(), { once: true });
   dialog.querySelector('#close-editor').onclick = close; dialog.querySelector('#cancel-editor').onclick = close;
   const form = dialog.querySelector('form');
+  dialog.querySelectorAll('[data-field-help]').forEach(button => {
+    button.onclick = () => {
+      const expanded = button.getAttribute('aria-expanded') === 'true';
+      button.setAttribute('aria-expanded', String(!expanded));
+      dialog.querySelector('#' + button.getAttribute('aria-controls')).hidden = expanded;
+    };
+  });
   const editable = kind === 'supplier' ? canManageSuppliers() : canWrite();
   if (!editable) form.querySelector('[type="submit"]')?.remove();
   const preview = () => {
     if (kind !== 'product') return;
-    try { const p = pricing(Object.fromEntries(new FormData(form))); dialog.querySelector('#price-preview').textContent = `Customer pays ${money(p.customerCents)} · Saving ${money(p.savingCents)}. Rebates and commission are separate.`; }
+    try { const p = pricing(Object.fromEntries(new FormData(form))); dialog.querySelector('#price-preview').textContent = `Customer pays ${money(p.customerCents)} · Saving ${money(p.savingCents)}. All amounts include VAT. Rebates and commission are separate.`; }
     catch (error) { dialog.querySelector('#price-preview').textContent = error.message; }
   };
   form.addEventListener('input', preview); preview();

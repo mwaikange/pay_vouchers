@@ -30,4 +30,4 @@ export function normalizeMobile(value) {
   if (!/^\+[1-9]\d{7,14}$/.test(phone)) throw new Error('Enter a valid international mobile number.');
   return phone;
 }
-export const money = cents => new Intl.NumberFormat('en-NA', { style: 'currency', currency: 'NAD' }).format(Number(cents) / 100);
+export const money = cents => new Intl.NumberFormat('en-NA', { style: 'currency', currency: 'NAD', currencyDisplay: 'code' }).format(Number(cents) / 100).replace('NAD', 'N$');
