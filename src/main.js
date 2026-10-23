@@ -41,7 +41,8 @@ async function loadWorkspace() {
     const { data: { user }, error: userError } = await db.auth.getUser();
     if (current !== generation) return;
     if (userError || !user) { state.staff = null; showLogin(); return; }
-    const { data: staff, error } = await db.from('paysme_voucher_staff').select('display_name,role,active').eq('user_id', user.id).maybeSingle();
+    const { data: access, error } = await db.rpc('paysme_voucher_access_context');
+    const staff = access?.[0];
     if (error) throw new Error('Voucher database setup is not available. Ask the PaySME administrator to verify the migration.');
     if (!staff?.active) {
       await db.auth.signOut(); showLogin('Your account does not have active PaySME Vouchers staff access.'); return;

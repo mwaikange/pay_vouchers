@@ -35,7 +35,7 @@ The build creates static files in `dist/` for a normal static host. It also refr
 
 ## Access and behavior
 
-- Staff sign in using Supabase Auth, then must have explicit, active `paysme_voucher_staff` membership. There is no public signup or frontend staff enrollment.
+- Staff sign in using Supabase Auth, then must have active, completed `admin_users` staff access. Existing `super_admin` staff have full voucher access; other staff require explicit `permissions.vouchers.read`, `write`, or `manage_suppliers` booleans. There is no public signup or frontend staff enrollment.
 - Admins manage suppliers and their two approval emails. Operators maintain products and branches. Viewers have read-only access. RLS enforces these rules in the database, independently of UI buttons.
 - Supplier finance and supervisor emails must differ. These are contact details, not supplier Auth accounts. The email/OTP payment-confirmation flow is a later phase.
 - Customer profiles have unique internal IDs. Initial phone matching is provisional and is not identity verification. Browser staff cannot modify verified status, marketing consent or customer identity data.

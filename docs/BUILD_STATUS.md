@@ -1,23 +1,16 @@
-# Phase 1 verification status
+# Voucher build status
 
-Implemented:
-- Staff login and active-membership gate, with a separate browser session storage key for the voucher portal.
-- Supplier create/edit with distinct finance and supervisor emails; supplier writes restricted to admins.
-- Branches with towns and addresses; product contents, pictures, rebate timing and pricing.
-- Customer directory with masked mobile display. Utility linking, historical imports, identity checks and marketing remain deferred.
-- SQL Editor scripts for creation, enrollment, read-only verification and a rollback-only permissions smoke test.
-- Localhost static preview/build without package installation. Browser uses the official Supabase client from a pinned CDN URL.
-- GitHub Actions run Node tests and a static build.
+Phase 1 implemented: staff login, supplier approval contacts, branches/towns, product contents, pricing and catalogue pictures, plus a read-only shared customer directory.
 
-Local verification:
-- Domain tests cover agreed pricing, money validation, distinct approval emails and Namibian mobile normalization.
-- Additional tests cover path traversal/secret-file rejection and refusal to ship backend keys as browser configuration.
-- JavaScript syntax and static build checked.
-- The HTTP integration test is skipped only when this local runtime returns EACCES for localhost connections. It remains enabled in CI; other errors fail the test.
+Live database verification (23 October 2026):
+- Confirmed the foundation tables already exist from the SQL previously run by the user. They were not recreated.
+- Inspected existing admin_users and its own-row staff RLS. Applied reuse_existing_staff migration, connecting voucher authorization to that directory. No staff records or Auth accounts were created or changed.
+- Active, fully set up super_admin staff get full access. Other staff require explicit vouchers permissions; KYC permissions alone do not grant access.
+- Live rollback-only test passed: existing super administrator created/read a test supplier; unrelated staff could not see it or create suppliers; anonymous callers had neither RPC access nor supplier SELECT grants. Test data was rolled back.
+- Voucher authorization functions use SECURITY INVOKER, empty search paths and authenticated-only execution. Post-change security advisor reported no voucher-specific findings.
 
-Pending external verification:
-- SQL creation and the real RLS smoke test must run in Supabase. No live SQL has been applied from this work.
-- Live Auth enrollment/login, Storage uploads and visual browser QA require the configured database and a working browser runtime.
-- Sales, wallet debits, supplier confirmation and voucher redemption are later phases and cannot be used for real money yet.
+Local checks: domain/config/server tests, JavaScript syntax and static build. Local HTTP integration is skipped only when this environment refuses localhost connections with EACCES. Browser login, visual QA and image upload remain unverified because browser control is unavailable.
 
-The Vendor application and its business tables remain unchanged.
+Not implemented: voucher sale execution, wallet debit, batching/payment operations, dual-email confirmation, discrepancy resolution, redemption APIs and receipt printing. The local lifecycle schema file is an unreviewed draft, not applied or part of the published auth fix. Do not run all local migrations blindly.
+
+The Vendor application, utilities tables and wallets remain unchanged. The portal source is in the pay_vouchers GitHub repository; production hosting has not been set up.

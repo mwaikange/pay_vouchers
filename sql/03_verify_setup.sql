@@ -1,4 +1,4 @@
--- Read-only verification after scripts 01 and 02. Does not expose customer data.
+-- Read-only verification after the foundation and script 05. Does not expose customer data.
 select c.relname as table_name, c.relrowsecurity as rls_enabled,
   has_table_privilege('anon', c.oid, 'SELECT') as anonymous_can_select,
   has_table_privilege('authenticated', c.oid, 'INSERT') as authenticated_has_insert_grant,
@@ -11,9 +11,10 @@ where n.nspname = 'public' and c.relname in (
 -- Expect seven rows: RLS enabled true, anonymous_can_select false.
 -- INSERT grants are further restricted by the role/active membership policies.
 
-select count(*) filter (where active and role = 'admin') as active_administrators
-from public.paysme_voucher_staff;
--- Expect at least one after enrollment.
+select count(*) as active_super_administrators
+from public.admin_users
+where is_active and setup_status = 'active' and role = 'super_admin' and auth_user_id is not null;
+-- Expect at least one existing staff super administrator.
 
 select id, public as public_catalogue_images, file_size_limit, allowed_mime_types
 from storage.buckets where id = 'paysme-voucher-products';
