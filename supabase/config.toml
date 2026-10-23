@@ -6,3 +6,7 @@ major_version = 17
 [auth]
 enabled = true
 enable_signup = false
+
+[functions.paysme-vouchers]
+# The handler validates staff JWTs, supplier server keys, and single-use confirmation tokens.
+verify_jwt = false

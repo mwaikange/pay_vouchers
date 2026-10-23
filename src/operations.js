@@ -1,0 +1,91 @@
+import {money,toCents} from './domain.mjs';
+const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const status=value=>`<span class="badge">${esc(value.replaceAll('_',' '))}</span>`;
+const date=value=>new Intl.DateTimeFormat('en-NA',{dateStyle:'medium',timeStyle:'short',timeZone:'Africa/Windhoek'}).format(new Date(value));
+const options=(rows,label,key='id')=>rows.map(row=>`<option value="${esc(row[key])}">${esc(label(row))}</option>`).join('');
+const input=(label,name,type='text',extra='')=>`<label>${label}<input name="${name}" type="${type}" required ${extra}></label>`;
+export async function command(db,action,args) {
+ const {data,error}=await db.functions.invoke('paysme-vouchers',{body:{action,args}});
+ if(error){let detail;try{detail=await error.context?.json();}catch{}throw new Error(detail?.error||'Could not complete the request. Check the connection and current status.');}
+ if(data?.error)throw new Error(data.error);return data;
+}
+export function salesPage(state) {
+ const supplier=id=>state.suppliers.find(x=>x.id===id)?.business_name||id;
+ return `<section class="panel"><div class="section-heading"><div><h2>Voucher sales</h2><p>Confirmed sales and purchase-time pricing. Vendor purchase integration comes last.</p></div><button data-op="refresh" class="secondary">Refresh</button></div><div class="table-wrap"><table><thead><tr><th>Sale / product</th><th>Voucher</th><th>Supplier / town</th><th>Customer paid</th><th>Supplier due</th><th>Paid at</th></tr></thead><tbody>${state.sales.map(s=>{
+ const v=state.vouchers.find(x=>x.sale_id===s.id);return `<tr><td><b>#${s.sale_no} · ${esc(s.product_name)}</b><small>${esc(s.status)}</small></td><td>${esc(v?.code||'Unavailable')}<small>${esc(v?.status?.replaceAll('_',' ')||'')}</small></td><td>${esc(supplier(s.supplier_id))}<small>${esc(s.recipient_town||'Not recorded')}</small></td><td>${money(s.customer_price_cents)}</td><td>${money(s.supplier_due_cents)}</td><td>${date(s.paid_at)}</td></tr>`;
+ }).join('')||'<tr><td colspan="6" class="empty">No paid voucher sales yet. Catalogue setup is available now; wallet purchase integration is reserved for the final phase.</td></tr>'}</tbody></table></div></section>`;
+}
+export function settlementsPage(state) {
+ const admin=state.staff.role==='admin';
+ return `<section class="panel"><div class="section-heading"><div><h2>Supplier settlement</h2><p>One payment order covers its fixed list of vouchers. Only supplier confirmation releases them.</p></div><button data-op="prepare_batch" ${admin?'':'disabled'}>Prepare payment batch</button></div><div class="table-wrap"><table><thead><tr><th>Payment order</th><th>Supplier</th><th>Vouchers</th><th>Due</th><th>Redeemed</th><th>Status</th><th></th></tr></thead><tbody>${state.batches.map(b=>`<tr><td><b>${esc(b.batch_reference)}</b><small>${date(b.created_at)}</small></td><td>${esc(b.supplier_name)}</td><td>${b.voucher_count}</td><td>${money(b.amount_due_cents)}</td><td>${b.redeemed_count} / ${b.voucher_count}</td><td>${status(b.status)}</td><td><button class="text-button" data-op="batch_details" data-id="${b.id}">Review</button></td></tr>`).join('')||'<tr><td colspan="7" class="empty">No payment batches. Eligible paid vouchers will be grouped by supplier.</td></tr>'}</tbody></table></div></section><section class="panel"><h2>Supplier API credentials</h2><p>Suppliers use server credentials for redemption. They do not need staff accounts. Keep the credential ID for rotation; the secret is shown once.</p><div class="dialog-actions"><button class="secondary" data-op="issue_api_key" ${admin?'':'disabled'}>Issue credential</button><button class="secondary" data-op="revoke_api_key" ${admin?'':'disabled'}>Revoke credential</button></div></section>`;
+}
+export function reportsPage(state) {
+ const due=state.analytics.pending_settlement_cents;
+ const consumed=state.analytics.settlement_consumed_cents;
+ const planning=new Map(state.analytics.planning.map(p=>[JSON.stringify([p.product_name,p.recipient_town,p.branch_name]),p.voucher_count]));
+ return `<div class="stats">${[['Payment orders',state.analytics.batch_count],['Awaiting settlement',money(due)],['Supplier funding consumed',money(consumed)],['Redemptions',state.analytics.redemption_count]].map(([label,value])=>`<article><span>${label}</span><strong>${esc(value)}</strong></article>`).join('')}</div><section class="panel"><h2>Supplier collection planning</h2><p>Unredeemed paid vouchers by product, recipient town and planned store.</p><div class="table-wrap"><table><thead><tr><th>Product</th><th>Town</th><th>Planned store</th><th>Vouchers</th></tr></thead><tbody>${Array.from(planning,([key,count])=>`<tr>${JSON.parse(key).map(x=>`<td>${esc(x)}</td>`).join('')}<td>${count}</td></tr>`).join('')||'<tr><td colspan="4" class="empty">Planning appears when vouchers are sold.</td></tr>'}</tbody></table></div></section><section class="panel"><h2>Redemption receipts</h2><div class="table-wrap"><table><thead><tr><th>Receipt</th><th>Voucher</th><th>Redeemed at</th><th>Settlement used</th></tr></thead><tbody>${state.redemptions.map(r=>`<tr><td>${esc(r.receipt_reference)}</td><td>${esc(r.receipt_data.voucher_code)}</td><td>${date(r.redeemed_at)}</td><td>${money(r.supplier_due_consumed_cents)}</td></tr>`).join('')||'<tr><td colspan="4" class="empty">No redemptions yet.</td></tr>'}</tbody></table></div></section><p class="muted">Operational lists load the latest 1,000 sales, vouchers, payment orders and redemptions. The summary figures and planning include all records; the receipt list is limited to the latest 1,000. Utilities history and marketing audiences are reserved for the separate Vendor integration.</p>`;
+}
+function dialog(title,body){const d=document.createElement('dialog');d.innerHTML=`<div class="section-heading"><h2>${esc(title)}</h2><button class="text-button" data-close aria-label="Close">Close</button></div>${body}`;document.body.append(d);d.querySelector('[data-close]').onclick=()=>d.close();d.addEventListener('close',()=>d.remove(),{once:true});d.showModal();return d;}
+export function bindOperations({db,state,reload}) {
+ document.querySelectorAll('[data-op]').forEach(button=>button.onclick=async()=>{
+  const action=button.dataset.op,id=button.dataset.id;
+  if(action==='refresh'){await reload();return;}
+  const admin=state.staff.role==='admin';if(!admin&&action!=='batch_details')return;
+  if(action==='batch_details'){
+   button.disabled=true;
+   try{
+    const b=state.batches.find(x=>x.id===id);
+    const [items,payments,issues]=await Promise.all([db.from('paysme_voucher_batch_items').select('*,paysme_vouchers(code,status),paysme_voucher_sales(product_name)').eq('batch_id',id).limit(5000),db.from('paysme_voucher_batch_payments').select('*').eq('batch_id',id),db.from('paysme_voucher_batch_discrepancies').select('*').eq('batch_id',id)]);
+    for(const r of [items,payments,issues])if(r.error)throw r.error;
+    const d=dialog(b.batch_reference,`<p><b>${esc(b.supplier_name)}</b> · ${status(b.status)}</p><p>${b.voucher_count} vouchers · ${money(b.amount_due_cents)} due · ${money(b.confirmed_payment_cents)} confirmed · ${money(b.settlement_consumed_cents)} consumed</p><p>Finance: ${esc(b.finance_email)}<br>Supervisor: ${esc(b.supervisor_email)}</p><h3>Recorded payments</h3>${payments.data.map(p=>`<p>${esc(p.bank_transaction_reference)} · ${money(p.amount_cents)}</p>`).join('')||'<p>No payment recorded.</p>'}<h3>Discrepancies</h3>${issues.data.map(i=>`<p><b>${esc(i.status)}: ${esc(i.reason)}</b><br>${esc(i.comment)}${i.resolution_note?'<br>Resolution: '+esc(i.resolution_note):''}</p>`).join('')||'<p>None reported.</p>'}<h3>Covered vouchers</h3><div class="table-wrap"><table><thead><tr><th>Voucher</th><th>Product</th><th>Due</th><th>Status</th></tr></thead><tbody>${items.data.map(i=>`<tr><td>${esc(i.paysme_vouchers.code)}</td><td>${esc(i.paysme_voucher_sales.product_name)}</td><td>${money(i.supplier_due_cents)}</td><td>${esc(i.paysme_vouchers.status)}</td></tr>`).join('')}</tbody></table></div>${items.data.length<b.voucher_count?'<p class="notice">This batch exceeds the 5,000-row display limit. The complete membership remains in the database.</p>':''}<div class="dialog-actions">${admin&&b.status!=='settled'?`<button data-next="record_payment">Record bank payment</button>${b.status==='disputed'?'<button data-next="resolve_discrepancy">Record resolution</button>':'<button data-next="start_confirmation">Email supplier confirmation</button>'}`:''}</div>`);
+    d.querySelectorAll('[data-next]').forEach(next=>next.onclick=()=>{d.close();openOperation(next.dataset.next,id);});
+   }catch(error){dialog('Unable to load batch',`<p role="alert">${esc(error.message)}</p>`);}finally{button.disabled=false;}
+   return;
+  }
+  openOperation(action,id);
+ });
+ function openOperation(action,id){
+  const supplierSelect=`<label>Supplier<select name="supplier_id" required>${options(state.suppliers.filter(s=>s.active),s=>s.business_name)}</select></label>`;
+  let body='';
+  if(action==='prepare_batch')body=supplierSelect+input('Cutoff (Namibia time, UTC+02:00)','cutoff_at','datetime-local')+'<p>Includes eligible paid vouchers not yet assigned to a payment order. Batch membership and prices become fixed.</p>';
+  if(action==='record_payment')body=input('Bank transaction reference','bank_reference')+input('Amount actually paid (N$)','amount','number','min="0.01" step="0.01"')+'<p>Record a completed bank transfer. This action does not send money or release vouchers.</p>';
+  if(action==='start_confirmation')body='<p>Finance receives the batch link. The approval code goes to the registered supervisor email. The batch stays on hold until the supplier completes confirmation.</p>';
+  if(action==='resolve_discrepancy')body='<label>Investigation and resolution note<textarea name="note" required minlength="3" maxlength="2000"></textarea></label><p>This keeps vouchers on hold. Send a fresh supplier confirmation after recording the resolution.</p>';
+  if(action==='issue_api_key')body=supplierSelect+input('Credential label (supplier POS server)','label')+'<label>Restrict to branch (optional)<select name="branch_id"><option value="">All supplier branches</option>'+options(state.branches,b=>b.name+' · '+b.town)+'</select></label>';
+  if(action==='revoke_api_key')body=input('Credential ID to revoke','credential_id')+'<p>Revocation immediately blocks further supplier requests using that credential.</p>';
+  const titles={prepare_batch:'Prepare payment batch',record_payment:'Record bank payment',start_confirmation:'Request supplier confirmation',resolve_discrepancy:'Resolve discrepancy',issue_api_key:'Issue supplier API credential',revoke_api_key:'Revoke supplier API credential'};
+  const d=dialog(titles[action],`<form><div class="form-grid">${body}</div><p role="alert" data-error></p><button type="submit">${action==='start_confirmation'?'Send confirmation email':'Continue'}</button></form>`);
+  const form=d.querySelector('form');
+  if(action==='prepare_batch'){
+   const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Windhoek',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date());const values=Object.fromEntries(parts.map(p=>[p.type,p.value]));form.elements.cutoff_at.value=`${values.year}-${values.month}-${values.day}T${values.hour}:${values.minute}`;
+  }
+  if(action==='issue_api_key'){
+   const update=()=>{form.elements.branch_id.innerHTML='<option value="">All supplier branches</option>'+options(state.branches.filter(b=>b.supplier_id===form.elements.supplier_id.value&&b.active),b=>b.name+' · '+b.town);};form.elements.supplier_id.onchange=update;update();
+  }
+  form.onsubmit=async event=>{
+   event.preventDefault();const save=form.querySelector('[type=submit]');save.disabled=true;
+   try{
+    const args=Object.fromEntries(new FormData(form));if(id)args.batch_id=id;
+    if(action==='prepare_batch')args.cutoff_at=new Date(args.cutoff_at+':00+02:00').toISOString();
+    if(action==='record_payment'){args.amount_cents=toCents(args.amount);delete args.amount;}
+    if(action==='start_confirmation')args.portal_url=location.origin+location.pathname;
+    if(action==='issue_api_key'&&!args.branch_id)delete args.branch_id;
+    const result=await command(db,action,args);d.close();await reload();
+    if(action==='issue_api_key')dialog('Copy supplier credential',`<p>Credential ID: <code>${esc(result.credential_id)}</code></p><p>Secret (shown once):</p><textarea readonly rows="4" aria-label="Supplier API secret">${esc(result.api_key)}</textarea><p>Store on the supplier server. Never embed in browser or POS frontend source. Keep the credential ID to revoke or rotate it.</p>`);
+   }catch(error){form.querySelector('[data-error]').textContent=error.message;save.disabled=false;}
+  };
+ }
+}
+
+export async function showConfirmation({db,root,token}) {
+ root.innerHTML='<main class="login"><section class="login-card"><h1>PaySME payment confirmation</h1><p>Loading batch details…</p></section></main>';
+ try{
+  const b=await command(db,'confirmation_details',{token});
+  root.innerHTML=`<main class="login"><section class="login-card"><span class="eyebrow">SUPPLIER PAYMENT</span><h1>${esc(b.supplier_name)}</h1><h2>${esc(b.batch_reference)}</h2><p>${b.voucher_count} vouchers · Amount due <b>${money(b.amount_due_cents)}</b></p><p>Payment recorded: <b>${money(b.payment_recorded_cents)}</b></p>${b.payments.map(p=>`<p>${esc(p.reference)} · ${money(p.amount_cents)}</p>`).join('')}<p>Check the payment against your bank records. Request an approval code sent to your registered supervisor. Your colleague should check the payment before sharing the code.</p><button id="send-approval">Email code to supervisor</button><form id="confirm-payment"><label>Supervisor approval code<input name="otp" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autocomplete="one-time-code"></label><label class="check"><input type="checkbox" required>I confirm our business received the payment covering this batch.</label><button type="submit">Confirm payment received</button></form><p role="status" id="confirmation-status"></p><details><summary>Report a payment discrepancy</summary><form id="report-issue"><label>Issue<select name="reason"><option value="payment_not_received">Payment not received</option><option value="incorrect_amount">Amount differs</option><option value="reference_mismatch">Reference differs</option><option value="other">Other</option></select></label><label>Details<textarea name="comment" maxlength="2000" required></textarea></label><button class="secondary" type="submit">Report to PaySME</button></form></details><p class="muted">Link expires ${date(b.expires_at)}. For assistance contact PaySME: support@paysme.site.</p></section></main>`;
+  const statusBox=document.querySelector('#confirmation-status');
+  const run=async(button,action,args)=>{button.disabled=true;try{const data=await command(db,action,{token,...args});statusBox.textContent=data.message||'Completed successfully.';return data;}catch(error){statusBox.textContent=error.message;return null;}finally{button.disabled=false;}};
+  document.querySelector('#send-approval').onclick=async event=>{const button=event.currentTarget;const data=await run(button,'confirmation_otp',{});if(data){button.disabled=true;button.textContent='Code sent to supervisor';setTimeout(()=>{if(button.isConnected){button.disabled=false;button.textContent='Resend supervisor code';}},60000);}};
+  document.querySelector('#confirm-payment').onsubmit=async event=>{event.preventDefault();const form=event.currentTarget;const result=await run(form.querySelector('button'),'confirm_batch',{otp:form.elements.otp.value});if(result?.confirmed)root.innerHTML='<main class="login"><section class="login-card"><h1>Payment confirmed</h1><p>The vouchers in this payment order are now redeemable. Thank you.</p><p>For assistance, contact PaySME.</p></section></main>';};
+  document.querySelector('#report-issue').onsubmit=async event=>{event.preventDefault();const form=event.currentTarget;const result=await run(form.querySelector('button'),'report_discrepancy',Object.fromEntries(new FormData(form)));if(result?.reported)root.innerHTML='<main class="login"><section class="login-card"><h1>Discrepancy recorded</h1><p>PaySME will investigate. The vouchers remain on hold until the issue is resolved and your business confirms payment again.</p></section></main>';};
+ }catch(error){root.innerHTML=`<main class="login"><section class="login-card"><h1>Confirmation unavailable</h1><p role="alert">${esc(error.message)}</p><p>Contact PaySME for a fresh confirmation link.</p></section></main>`;}
+}

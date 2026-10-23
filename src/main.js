@@ -1,3 +1,4 @@
+import {salesPage,settlementsPage,reportsPage,bindOperations,showConfirmation} from './operations.js';
 import { approvalEmails, pricing, money, toCents } from './domain.mjs';
 
 const root = document.querySelector('#app');
@@ -8,6 +9,7 @@ const createClient = globalThis.supabase?.createClient;
 const db = url && key && createClient ? createClient(url, key, { auth: { storageKey: 'paysme-vouchers-staff-auth' } }) : null;
 const state = { page: 'overview', staff: null, suppliers: [], products: [], branches: [], customers: [], images: [], notice: '' };
 let generation = 0;
+const confirmationToken=new URLSearchParams(location.hash.slice(1)).get('confirm');
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const canWrite = () => state.staff && state.staff.role !== 'viewer';
 const canManageSuppliers = () => state.staff?.role === 'admin';
@@ -47,13 +49,18 @@ async function loadWorkspace() {
     if (!staff?.active) {
       await db.auth.signOut(); showLogin('Your account does not have active PaySME Vouchers staff access.'); return;
     }
-    const tables = ['suppliers', 'products', 'branches', 'customers', 'images'];
+    const tables = ['suppliers', 'products', 'branches', 'customers', 'images','sales','vouchers','batches','redemptions','analytics'];
     const results = await Promise.all([
       db.from('paysme_voucher_suppliers').select('*').order('created_at', { ascending: false }).limit(250),
       db.from('paysme_voucher_products').select('*').order('created_at', { ascending: false }).limit(250),
       db.from('paysme_voucher_branches').select('*').order('town').limit(250),
       db.from('paysme_customers').select('id,customer_no,full_name,town,mobile_number,source,mobile_verified_at').order('created_at', { ascending: false }).limit(100),
-      db.from('paysme_voucher_product_images').select('*').order('created_at').limit(1000)
+      db.from('paysme_voucher_product_images').select('*').order('created_at').limit(1000),
+      db.from('paysme_voucher_sales').select('*').order('paid_at',{ascending:false}).limit(1000),
+      db.from('paysme_vouchers').select('*').order('created_at',{ascending:false}).limit(1000),
+      db.from('paysme_voucher_payment_batches').select('*').order('created_at',{ascending:false}).limit(1000),
+      db.from('paysme_voucher_redemptions').select('*').order('redeemed_at',{ascending:false}).limit(1000),
+      db.rpc('paysme_voucher_overview')
     ]);
     if (current !== generation) return;
     for (const result of results) if (result.error) throw result.error;
@@ -70,7 +77,7 @@ async function loadWorkspace() {
 }
 
 function overview() {
-  return `<div class="hero"><div><span class="eyebrow">YOUR VOUCHER NETWORK</span><h2>More value.<br>More possibilities.</h2><p>Build the catalogue that connects businesses<br>with PaySME customers.</p><button data-action="supplier" ${canWrite() ? '' : 'disabled'}>Add a supplier ↗</button></div><div class="ticket"><span>PaySME VOUCHERS</span><div class="ticket-line"></div><strong>Built for<br>everyday value.</strong><span>BUSINESSES · PRODUCTS · PEOPLE</span></div></div><div class="stats">${[['Suppliers loaded', state.suppliers.length], ['Products loaded', state.products.length], ['Branches loaded', state.branches.length], ['Customer profiles loaded', state.customers.length]].map(([label, count]) => `<article><span>${label}</span><strong>${count}</strong></article>`).join('')}</div><section class="panel"><div class="section-heading"><div><h2>Your first steps</h2><p>Prepare the network before voucher sales begin.</p></div><span class="badge">Foundation phase</span></div><div class="steps"><article><b>01</b><h3>Load suppliers</h3><p>Business details and the two finance approval contacts.</p></article><article><b>02</b><h3>Build the catalogue</h3><p>Product contents, pictures, customer pricing and supplier terms.</p></article><article><b>03</b><h3>Prepare settlement</h3><p>Batch confirmation and redemption are the next build phases.</p></article></div></section><p class="muted">Lists load up to 250 suppliers, products and branches, and the latest 100 customer profiles. Counts describe loaded records.</p>`;
+  return `<div class="hero"><div><span class="eyebrow">YOUR VOUCHER NETWORK</span><h2>More value.<br>More possibilities.</h2><p>Build the catalogue that connects businesses<br>with PaySME customers.</p><button data-action="supplier" ${canWrite() ? '' : 'disabled'}>Add a supplier ↗</button></div><div class="ticket"><span>PaySME VOUCHERS</span><div class="ticket-line"></div><strong>Built for<br>everyday value.</strong><span>BUSINESSES · PRODUCTS · PEOPLE</span></div></div><div class="stats">${[['Suppliers loaded', state.suppliers.length], ['Products loaded', state.products.length], ['Branches loaded', state.branches.length], ['Customer profiles loaded', state.customers.length]].map(([label, count]) => `<article><span>${label}</span><strong>${count}</strong></article>`).join('')}</div><section class="panel"><div class="section-heading"><div><h2>Your first steps</h2><p>Prepare the network before voucher sales begin.</p></div><span class="badge">Voucher operations</span></div><div class="steps"><article><b>01</b><h3>Load suppliers</h3><p>Business details and the two finance approval contacts.</p></article><article><b>02</b><h3>Build the catalogue</h3><p>Product contents, pictures, customer pricing and supplier terms.</p></article><article><b>03</b><h3>Prepare settlement</h3><p>Review payment batches, supplier confirmation and redemption records.</p></article></div></section><p class="muted">Lists load up to 250 suppliers, products and branches, and the latest 100 customer profiles. Counts describe loaded records.</p>`;
 }
 function suppliers() {
   return `<section class="panel"><div class="section-heading"><div><h2>Supplier directory</h2><p>Manage businesses and payment approval contacts.</p></div><button data-action="supplier" ${canWrite() ? '' : 'disabled'}>+ Add supplier</button></div><div class="table-wrap"><table><thead><tr><th>Business</th><th>Finance confirmation</th><th>Supervisor approval</th><th>Status</th><th></th></tr></thead><tbody>${state.suppliers.map(s => `<tr><td><b>${esc(s.business_name)}</b><small>SUP-${s.supplier_no}</small></td><td>${esc(s.finance_email)}</td><td>${esc(s.supervisor_email)}</td><td>${badge(s.active)}</td><td><button class="text-button" data-action="supplier" data-id="${s.id}">${canWrite() ? 'Edit' : 'View'}</button></td></tr>`).join('') || '<tr><td colspan="5" class="empty">Add your first supplier to start building the catalogue.</td></tr>'}</tbody></table></div></section><section class="panel"><div class="section-heading"><div><h2>Branches & towns</h2><p>Collection locations for supplier planning.</p></div><button class="secondary" data-action="branch" ${canWrite() && state.suppliers.length ? '' : 'disabled'}>+ Add branch</button></div><div class="branch-list">${state.branches.map(b => `<button class="branch" data-action="branch" data-id="${b.id}"><b>${esc(b.name)}</b><span>${esc(supplierName(b.supplier_id))} · ${esc(b.town)}</span>${badge(b.active)}</button>`).join('') || '<p class="empty">No branches added yet.</p>'}</div></section>`;
@@ -86,8 +93,8 @@ function customers() {
   return `<section class="panel"><div class="section-heading"><div><h2>Customer directory</h2><p>Shared customer IDs for future utilities and voucher purchase history.</p></div><span class="badge">Read only</span></div><p class="notice">Customer collection and historical utilities linking will be added with the separate Vendor app integration. Phone matches alone do not verify identity.</p><div class="table-wrap"><table><thead><tr><th>Customer</th><th>Mobile</th><th>Town</th><th>Contact status</th></tr></thead><tbody>${state.customers.map(c => `<tr><td><b>${esc(c.full_name || 'Contact profile')}</b><small>CUS-${c.customer_no}</small></td><td>•••• ${esc(c.mobile_number.slice(-4))}</td><td>${esc(c.town || 'Not recorded')}</td><td>${c.mobile_verified_at ? 'Mobile verified' : 'Unverified'}</td></tr>`).join('') || '<tr><td colspan="4" class="empty">No customer profiles have been linked yet.</td></tr>'}</tbody></table></div></section>`;
 }
 function render() {
-  const pages = { overview, suppliers, products, customers };
-  root.innerHTML = `<div class="workspace"><aside><div class="brand">P<span>▰</span> PaySME<small>VOUCHERS</small></div><div class="nav-label">WORKSPACE</div><nav>${Object.keys(pages).map(page => `<button data-page="${page}" class="${state.page === page ? 'selected' : ''}">${{ overview: '◈', suppliers: '▦', products: '▱', customers: '◎' }[page]} <span>${page[0].toUpperCase() + page.slice(1)}</span></button>`).join('')}</nav><div class="sidebar-note"><b>Made for everyday value.</b><p>Powered by PaySME</p></div></aside><div class="content"><header><div><span class="eyebrow">PAYSME VOUCHERS</span><h1>${state.page[0].toUpperCase() + state.page.slice(1)}</h1></div><div class="account"><span><b>${esc(state.staff.display_name)}</b><small>${esc(state.staff.role)}</small></span><button class="secondary" id="signout">Sign out</button></div></header><main>${state.notice ? `<p class="notice" role="status">${esc(state.notice)}</p>` : ''}${pages[state.page]()}</main></div></div>`;
+  const pages = { overview, suppliers, products, customers, sales:()=>salesPage(state), settlements:()=>settlementsPage(state), reports:()=>reportsPage(state) };
+  root.innerHTML = `<div class="workspace"><aside><div class="brand">P<span>▰</span> PaySME<small>VOUCHERS</small></div><div class="nav-label">WORKSPACE</div><nav>${Object.keys(pages).map(page => `<button data-page="${page}" class="${state.page === page ? 'selected' : ''}">${{ overview: '◈', suppliers: '▦', products: '▱', customers: '◎' }[page]||'•'} <span>${page[0].toUpperCase() + page.slice(1)}</span></button>`).join('')}</nav><div class="sidebar-note"><b>Made for everyday value.</b><p>Powered by PaySME</p></div></aside><div class="content"><header><div><span class="eyebrow">PAYSME VOUCHERS</span><h1>${state.page[0].toUpperCase() + state.page.slice(1)}</h1></div><div class="account"><span><b>${esc(state.staff.display_name)}</b><small>${esc(state.staff.role)}</small></span><button class="secondary" id="signout">Sign out</button></div></header><main>${state.notice ? `<p class="notice" role="status">${esc(state.notice)}</p>` : ''}${pages[state.page]()}</main></div></div>`;
   document.querySelectorAll('[data-page]').forEach(button => { button.onclick = () => { state.page = button.dataset.page; state.notice = ''; render(); }; });
   document.querySelectorAll('[data-action]').forEach(button => {
     if (button.dataset.action === 'supplier' && !canManageSuppliers()) {
@@ -95,6 +102,7 @@ function render() {
     }
     button.onclick = () => openEditor(button.dataset.action, button.dataset.id);
   });
+  bindOperations({db,state,reload:loadWorkspace});
   document.querySelector('#signout').onclick = async () => { generation++; state.staff = null; state.notice = ''; state.suppliers = []; state.products = []; state.customers = []; state.branches = []; state.images = []; await db.auth.signOut(); showLogin(); };
 }
 
@@ -167,10 +175,14 @@ function openEditor(kind, id) {
   };
 }
 
+if(confirmationToken&&db){showConfirmation({db,root,token:confirmationToken});}
+else {
 showLogin();
 if (db) {
   db.auth.onAuthStateChange(event => {
     if (event === 'SIGNED_OUT') { generation++; state.staff = null; document.querySelectorAll('dialog').forEach(d => d.close()); showLogin(); }
     else if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') setTimeout(loadWorkspace, 0);
   });
+}
+
 }

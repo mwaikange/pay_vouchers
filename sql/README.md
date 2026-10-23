@@ -1,17 +1,15 @@
-# Voucher database setup
+# Voucher SQL
 
-Project: zvoqrqdnuupdefsuiurt (existing PaySME database).
+The existing PaySME project zvoqrqdnuupdefsuiurt already has the foundation and all voucher migrations through daily batching applied. You do not need to run these scripts again.
 
-The foundation (01) is already installed. Do not rerun it. Script 05 connects the portal to the existing admin_users staff directory, without changing staff records or Auth accounts. Script 02 is deprecated and now only reports staff setup counts.
+For a fresh installation only:01 foundation,05 existing staff access,06 lifecycle tables,07 transactional operations/reporting/daily batching.02 is deprecated.03 and09 are read-only verification;04 and08 are complete rollback-only integration tests.08 never sends messages or moves money.
 
-For a new installation, run 01, then 05. For the existing installation, apply only 05. Run 03 for read-only verification and 04 for the rollback-only permission test. Live deployment status is recorded in docs/BUILD_STATUS.md.
+Canonical migrations are under supabase/migrations.07 combines the operations, operational-controls and daily-batching migrations for SQL Editor use. Never apply both a numbered script and its canonical migration to the same database.
 
-Staff use their existing Auth email and password. Active, fully set up super_admin staff have administrator access. Other staff require explicit booleans under permissions.vouchers: read (viewer), write (operator), manage_suppliers (administrator). Write and administrator permissions imply read. Existing KYC/vendor permissions do not grant voucher access.
+Existing staff Auth email/password are used. Active completed super_admin staff have full access; other staff need explicit permissions.vouchers read/write/manage_suppliers booleans. Suppliers have no portal accounts. The legacy paysme_voucher_staff table is retained but no longer authorizes access.
 
-The legacy paysme_voucher_staff table remains for migration history but no longer grants access. Staff permissions are managed through the existing trusted staff administration process, never through this browser portal.
+Financial tables allow staff reads through RLS and no direct browser writes. The command RPC is service-only. Recipient snapshots, HMAC key, challenges and supplier key hashes are private with no client grants. Catalogue images alone are public; never upload identity documents.
 
-Administrators manage suppliers and approval emails. Operators maintain products and branches. Viewers only read. RLS enforces access. Browser users cannot change customer verification, marketing consent or audit events.
+No Vendor app, wallet, utilities table or Auth configuration is changed. Do not deploy the local Auth config to the shared project. See docs/OPERATIONS.md and docs/SUPPLIER_API.md.
 
-Catalogue images are public JPEG/PNG/WebP up to 5 MiB. Never upload identity documents. Prices are integer cents: supplier500 + markup20 = customer520; reference600 means saving80. Rebates and commissions remain separate.
-
-Sales, settlement and redemption are later phases. Do not apply the unreviewed lifecycle draft migration. Existing utilities, wallets and the Vendor app are outside this phase.
+Migration history: the foundation was applied manually before connector access and is not registered in Supabase migration history. Later migration filenames match the server-recorded versions. Do not run `supabase db push` or rerun the foundation against this shared project until that baseline is reconciled through a reviewed migration procedure. No migration-history records were changed.
