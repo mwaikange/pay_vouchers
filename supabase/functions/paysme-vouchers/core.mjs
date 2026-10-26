@@ -1,4 +1,4 @@
-export const STAFF_ACTIONS = new Set(['prepare_batch','record_payment','start_confirmation','resolve_discrepancy','issue_api_key','revoke_api_key']);
+export const STAFF_ACTIONS = new Set(['prepare_batch','record_payment','attach_payment_proof','start_confirmation','resolve_discrepancy','issue_api_key','revoke_api_key']);
 export const CONFIRM_ACTIONS = new Set(['confirmation_details','confirmation_otp','confirm_batch','report_discrepancy']);
 export const SUPPLIER_ACTIONS = new Set(['verify_voucher','validate_id','request_recipient_otp','validate_recipient_otp','redeem_voucher','get_receipt']);
 export const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -12,7 +12,15 @@ export function confirmationUrl(base,token) {
 }
 const amount = cents => 'N$'+(Number(cents)/100).toFixed(2);
 export function batchMessage(batch) {
- return `${escapeHtml(batch.batch_reference)}<br>Supplier: ${escapeHtml(batch.supplier_name)}<br>Vouchers: ${escapeHtml(batch.voucher_count)}<br>Amount due: ${amount(batch.amount_due_cents)}${batch.payment_recorded_cents!==undefined?'<br>Recorded payment: '+amount(batch.payment_recorded_cents):''}`;
+ return `${escapeHtml(batch.batch_reference)}<br>Supplier: ${escapeHtml(batch.supplier_name)}<br>Vouchers in batch: ${escapeHtml(batch.voucher_count)}<br><b>Amount paid (bank): ${amount(batch.payment_recorded_cents ?? 0)}</b><br>Batch value (supplier settlement): ${amount(batch.amount_due_cents)}${batch.customer_voucher_value_cents!==undefined&&Number(batch.customer_voucher_value_cents)!==Number(batch.amount_due_cents)?'<br>Customer value of issued vouchers: '+amount(batch.customer_voucher_value_cents):''}`;
+}
+
+export function emailHint(email) {
+ const [name,domain]=String(email||'').split('@');
+ return domain?`${name.slice(0,1)}***@${domain}`:'registered supervisor';
+}
+export function paymentMessage(payments=[]) {
+ return payments.map(payment=>`${escapeHtml(payment.reference)} · ${amount(payment.amount_cents)}`).join('<br>');
 }
 export function receiptHtml(receipt,width='80') {
  if(!['58','80'].includes(String(width))) throw new Error('Receipt width must be 58 or 80 mm.');

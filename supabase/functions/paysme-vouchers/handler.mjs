@@ -1,4 +1,4 @@
-import {STAFF_ACTIONS,CONFIRM_ACTIONS,SUPPLIER_ACTIONS,randomToken,randomOtp,hash,confirmationUrl,batchMessage,escapeHtml,receiptHtml} from './core.mjs';
+import {STAFF_ACTIONS,CONFIRM_ACTIONS,SUPPLIER_ACTIONS,randomToken,randomOtp,hash,confirmationUrl,batchMessage,escapeHtml,receiptHtml,emailHint,paymentMessage} from './core.mjs';
 
 const headers={'Content-Type':'application/json','Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'authorization,apikey,content-type,x-client-info,x-voucher-api-key','Access-Control-Allow-Methods':'POST,OPTIONS','Cache-Control':'no-store','Referrer-Policy':'no-referrer','X-Content-Type-Options':'nosniff'};
 const reply=(body,status=200)=>new Response(JSON.stringify(body),{status,headers});
@@ -10,7 +10,7 @@ async function readBody(req) {
  const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.length;}
  return JSON.parse(new TextDecoder().decode(bytes));
 }
-export function createHandler({db,sendEmail,sendSms}) {
+export function createHandler({db,sendEmail,sendSms,loadProofAttachments=async()=>[],proofLinks=async payments=>payments.map(({proof_object_path,...payment})=>payment)}) {
  return async req=>{
   if(req.method==='OPTIONS')return new Response(null,{status:204,headers});
   if(req.method!=='POST')return reply({service:'PaySME Vouchers',message:'Use the authenticated POST API.'},405);
@@ -44,20 +44,25 @@ export function createHandler({db,sendEmail,sendSms}) {
    if(error) {
     // SQL validation errors contain no recipient details; never log request bodies or secrets.
     if(error.code==='42501')return reply({error:'Voucher administrator access required'},403);
-    return reply({error:'Operation could not be completed. Check the current status and request fields.'},409);
+    const safeMessages=new Set(['Upload a valid proof of payment before recording the bank payment','Upload a valid proof of payment for this batch','Recorded payment not found in this batch','Attach proof of payment to every bank payment before sending confirmation','Record the full payment before requesting confirmation']);
+    return reply({error:safeMessages.has(error.message)?error.message:'Operation could not be completed. Check the current status and request fields.'},409);
    }
    if(data?.error)return reply({error:data.error},409);
    if(action==='start_confirmation') {
-    const b=data.batch;
+    const b={...data.batch,payment_recorded_cents:data.payment_recorded_cents,customer_voucher_value_cents:data.customer_voucher_value_cents};
+    const attachments=await loadProofAttachments(data.payments||[]);
     await sendEmail(data.finance_email,'PaySME payment confirmation: '+b.batch_reference,
-     `<h2>Confirm supplier payment</h2><p>${batchMessage(b)}</p><p>Review the payment, then request the approval code sent to your registered supervisor.</p><p><a href="${escapeHtml(args.confirmation_url)}">Review batch payment</a></p><p>This link expires in 48 hours. For discrepancies, report the issue on the confirmation page. Contact PaySME for support.</p>`);
+     `<h2>Bank payment confirmation</h2><p>${batchMessage(b)}</p><p>Bank payment references:<br>${paymentMessage(data.payments)}</p><p>Proof of payment is attached. Compare the payment with your bank records, then request the approval code sent to your registered supervisor.</p><p><a href="${escapeHtml(args.confirmation_url)}">Review batch payment</a></p><p>This link expires in 48 hours. For discrepancies, report the issue on the confirmation page. Contact PaySME: support@paysme.site.</p>`,attachments);
     return reply({sent:true,batch_reference:b.batch_reference});
    }
    if(action==='confirmation_otp') {
+    const attachments=await loadProofAttachments(data.payments||[]);
     await sendEmail(data.supervisor_email,'PaySME supervisor approval: '+data.batch_reference,
-     `<h2>Supplier payment approval</h2><p>${batchMessage(data)}</p><p>Check the payment independently. If correct, give this approval code to your finance colleague:</p><h2>${otp}</h2><p>Expires in 10 minutes. If anything differs, do not share the code; contact PaySME.</p>`);
-    return reply({sent:true,message:'Approval code sent to your registered supervisor email.'});
+     `<h2>Bank payment approval</h2><p>${batchMessage(data)}</p><p>Bank payment references:<br>${paymentMessage(data.payments)}</p><p>Proof of payment is attached. Check the payment independently. If correct, give this approval code to your finance colleague:</p><h2>${otp}</h2><p>Expires in 10 minutes. If anything differs, do not share the code; contact PaySME: support@paysme.site.</p>`,attachments);
+    const hint=emailHint(data.supervisor_email);
+    return reply({sent:true,message:`The mail server accepted the approval-code email for ${hint}. Check that inbox and its spam folder.`,supervisor_email_hint:hint});
    }
+   if(action==='confirmation_details')return reply({...data,payments:await proofLinks(data.payments||[])});
    if(action==='request_recipient_otp') {
     // Both deliveries must succeed. A failed delivery never grants verification or redemption.
     await sendEmail(data.email,'PaySME voucher redemption code',`<p>Your voucher redemption email code is <b>${emailOtp}</b>. It expires in 10 minutes. Present both your SMS and email codes at the supplier store. If you did not request this, contact PaySME.</p>`);
@@ -71,6 +76,7 @@ export function createHandler({db,sendEmail,sendSms}) {
    if(error instanceof SyntaxError)return reply({error:'Invalid JSON request'},400);
    if(error.message?.startsWith('Publish the portal'))return reply({error:error.message},400);
    if(error.message==='Request too large')return reply({error:error.message},413);
+   if(['Proof of payment is required before sending this email.','The proof of payment could not be loaded. No email was sent.','Proof files are too large to email. Upload smaller files before trying again.','The mail server did not accept the email. Please retry after the cooldown or contact PaySME.'].includes(error.message))return reply({error:error.message},503);
    // No provider error bodies, OTPs, ID numbers or email addresses in public errors/logs.
    console.error('Voucher operation failed',{action:typeof action==='string'?action:'invalid',event_id:crypto.randomUUID()});
    return reply({error:'Request or notification could not be completed. No confirmation or redemption was granted by a notification failure. Retry after the cooldown or contact PaySME.'},503);

@@ -31,3 +31,20 @@ export function normalizeMobile(value) {
   return phone;
 }
 export const money = cents => new Intl.NumberFormat('en-NA', { style: 'currency', currency: 'NAD', currencyDisplay: 'code' }).format(Number(cents) / 100).replace('NAD', 'N$');
+
+export function catalogueImageExtension(file) {
+  const extensions = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+  if (!extensions[file?.type] || !file.size || file.size > 5242880) throw new Error('Choose a JPEG, PNG or WebP picture no larger than 5 MB.');
+  return extensions[file.type];
+}
+
+export function paymentProofExtension(file) {
+  const extensions = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+  if (!extensions[file?.type] || !file.size || file.size > 5242880) throw new Error('Choose a PDF, JPEG, PNG or WebP proof of payment no larger than 5 MB.');
+  return extensions[file.type];
+}
+
+export function confirmationReadiness(batch,payments) {
+  const paidCents=payments.reduce((sum,payment)=>sum+Number(payment.amount_cents),0);
+  return {paidCents,ready:payments.length>0&&Number.isSafeInteger(paidCents)&&paidCents>=Number(batch.amount_due_cents)&&payments.every(payment=>Boolean(payment.proof_object_path))&&!['disputed','settled'].includes(batch.status)};
+}

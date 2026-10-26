@@ -1,6 +1,6 @@
 import {salesPage,settlementsPage,reportsPage,bindOperations,showConfirmation} from './operations.js';
 import {customersPage,bindCustomers,customerRoute} from './customers.js';
-import { approvalEmails, pricing, money, toCents } from './domain.mjs';
+import { approvalEmails, pricing, money, toCents, catalogueImageExtension } from './domain.mjs';
 
 const root = document.querySelector('#app');
 const config = globalThis.PAYSME_VOUCHERS_CONFIG || {};
@@ -8,7 +8,7 @@ const url = config.supabaseUrl;
 const key = config.supabaseAnonKey;
 const createClient = globalThis.supabase?.createClient;
 const db = url && key && createClient ? createClient(url, key, { auth: { storageKey: 'paysme-vouchers-staff-auth' } }) : null;
-const state = { page: customerRoute(location.hash) ? 'customers' : 'overview', staff: null, suppliers: [], products: [], branches: [], customers: [], images: [], notice: '', companyId: '', companies: [], financeLoading: false, customerId: customerRoute(location.hash), customerRecord: null, customerBusy: false, customerError: '' };
+const state = { page: customerRoute(location.hash) ? 'customers' : 'overview', staff: null, suppliers: [], products: [], branches: [], customers: [], images: [], notice: '', companyId: '', companies: [], financeLoading: false, customerId: customerRoute(location.hash), customerRecord: null, customerBusy: false, customerError: '', towns: [] };
 let generation = 0;
 const confirmationToken=new URLSearchParams(location.hash.slice(1)).get('confirm');
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -18,11 +18,11 @@ const supplierName = id => state.suppliers.find(s => s.id === id)?.business_name
 const badge = active => `<span class="badge ${active ? 'green' : ''}">${active ? 'Active' : 'Inactive'}</span>`;
 const pricingHelp = {
   "supplier": "The agreed supplier price before any additional rebate, inclusive of VAT. Example: N$500. If this already includes every supplier discount, leave the separate rebate at zero.",
-  "markup": "The VAT-inclusive amount added to the supplier base price to set the customer price. Supplier N$500 + markup N$20 = customer N$520. Vendor commission and other costs reduce what PaySME retains.",
+  "markup": "The VAT-inclusive amount added to the supplier base price to set the customer price. Supplier N$500 + markup N$20 = customer N$520. Vendors already benefit from their account top-up discount; no additional voucher commission is paid.",
   "instore": "The normal VAT-inclusive store price for the same product. It is used to show the customer saving, not to calculate supplier payment. Store N$600 minus customer N$520 = saving N$80.",
   "rebate": "An additional VAT-inclusive discount or rebate agreed with the supplier, separate from the base price and markup. Do not enter a discount twice. Example: a further N$10 rebate on a N$500 base price.",
   "rebate_timing": "Earned / received later: pay the supplier N$500 now and claim or receive the N$10 rebate later. Deduct from settlement: pay N$490 now. Neither option changes the customer price.",
-  "commission": "The VAT-inclusive amount the selling vendor earns per voucher. It is recorded separately and does not automatically increase the customer price. A N$20 markup less N$5 commission leaves PaySME N$15 before other costs and any rebate.",
+  "commission": "No additional vendor commission is paid on voucher sales. Vendors already receive their benefit as a discount when topping up their account. This value is fixed at zero.",
   "entitlement_type": "Specified product / combo: the voucher is exchanged for the listed products. Store credit: the voucher provides a defined amount to spend at the supplier. Store credit value is entered separately from the customer purchase price.",
   "redemption_value": "For store-credit vouchers only: the VAT-inclusive shopping value the customer can spend. Example: N$600 store credit sold for N$520. Leave this blank for a specified product or combo; its normal store price does not automatically become cash credit."
 };
@@ -68,7 +68,7 @@ async function loadWorkspace() {
       await db.auth.signOut(); showLogin('Your account does not have active PaySME Vouchers staff access.'); return;
     }
     const scoped = query => state.companyId ? query.eq('supplier_id',state.companyId) : query;
-    const tables = ['suppliers', 'products', 'branches', 'customerDirectory', 'images','sales','vouchers','batches','redemptions','analytics','companies'];
+    const tables = ['suppliers', 'products', 'branches', 'customerDirectory', 'images','sales','vouchers','batches','redemptions','analytics','companies','towns'];
     const results = await Promise.all([
       db.from('paysme_voucher_suppliers').select('*').order('created_at', { ascending: false }).limit(250),
       db.from('paysme_voucher_products').select('*').order('created_at', { ascending: false }).limit(250),
@@ -80,7 +80,8 @@ async function loadWorkspace() {
       scoped(db.from('paysme_voucher_payment_batches').select('*').order('created_at',{ascending:false})).limit(1000),
       scoped(db.from('paysme_voucher_redemptions').select('*').order('redeemed_at',{ascending:false})).limit(1000),
       db.rpc('paysme_voucher_company_overview',{p_supplier_id:state.companyId||null}),
-      db.rpc('paysme_voucher_companies')
+      db.rpc('paysme_voucher_companies'),
+      db.from('namibian_towns').select('name').eq('is_active',true).order('name').limit(1000)
     ]);
     if (current !== generation) return;
     for (const result of results) if (result.error) throw result.error;
@@ -138,9 +139,11 @@ function openEditor(kind, id) {
   if (kind === 'supplier') {
     data = state.suppliers.find(s => s.id === id) || {}; table = 'paysme_voucher_suppliers';
     body = field('Business name', 'business_name', data.business_name, 'text', true) + field('Registration number', 'registration_number', data.registration_number) + field('Finance contact name', 'finance_contact_name', data.finance_contact_name, 'text', true) + field('Finance confirmation email', 'finance_email', data.finance_email, 'email', true) + field('Supervisor name', 'supervisor_name', data.supervisor_name, 'text', true) + field('Supervisor approval email', 'supervisor_email', data.supervisor_email, 'email', true) + field('Operational contact email', 'support_email', data.support_email, 'email') + statusField(data.active) + textArea('Settlement terms / notes', 'settlement_terms', data.settlement_terms);
+    const logoUrl = data.logo_path && db.storage.from('paysme-voucher-products').getPublicUrl(data.logo_path).data.publicUrl;
+    body += `<section class="wide supplier-logo-upload"><label>Supplier logo (optional)<input name="logo" type="file" accept="image/jpeg,image/png,image/webp"></label><p class="muted">JPEG, PNG or WebP, up to 5 MB. Shown to vendors when selecting this supplier.</p>${logoUrl ? `<img src="${esc(logoUrl)}" alt="${esc(data.business_name || 'Supplier')} logo" width="100" height="100" style="object-fit:contain">` : ''}<img id="supplier-logo-preview" alt="Selected supplier logo" width="100" height="100" style="object-fit:contain" hidden></section>`;
   } else if (kind === 'branch') {
     data = state.branches.find(b => b.id === id) || {}; table = 'paysme_voucher_branches';
-    body = select('Supplier', 'supplier_id', supplierOptions, data.supplier_id) + field('Branch name', 'name', data.name, 'text', true) + field('Town', 'town', data.town, 'text', true) + statusField(data.active) + textArea('Address', 'address', data.address);
+    body = select('Supplier', 'supplier_id', supplierOptions, data.supplier_id) + field('Branch name', 'name', data.name, 'text', true) + select('Town', 'town', [['','Select town'], ...state.towns.map(t=>[t.name,t.name])], data.town || '') + statusField(data.active) + textArea('Address', 'address', data.address);
   } else if (kind === 'product') {
     data = state.products.find(p => p.id === id) || {}; table = 'paysme_voucher_products';
     const price = name => data[name] === undefined ? '0.00' : (Number(data[name]) / 100).toFixed(2);
@@ -156,6 +159,23 @@ function openEditor(kind, id) {
   dialog.addEventListener('close', () => dialog.remove(), { once: true });
   dialog.querySelector('#close-editor').onclick = close; dialog.querySelector('#cancel-editor').onclick = close;
   const form = dialog.querySelector('form');
+  if (kind === 'supplier') {
+    let previewUrl;
+    form.elements.logo.onchange = () => {
+      const image = dialog.querySelector('#supplier-logo-preview');
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      image.hidden = true;
+      const file = form.elements.logo.files[0];
+      if (!file) return;
+      try { catalogueImageExtension(file); previewUrl = URL.createObjectURL(file); image.src = previewUrl; image.hidden = false; dialog.querySelector('#form-error').textContent = ''; }
+      catch (error) { dialog.querySelector('#form-error').textContent = error.message; }
+    };
+    dialog.addEventListener('close', () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, { once: true });
+  }
+  if (kind === 'product') {
+    form.elements.commission.value = '0.00';
+    form.elements.commission.readOnly = true;
+  }
   dialog.querySelectorAll('[data-field-help]').forEach(button => {
     button.onclick = () => {
       const expanded = button.getAttribute('aria-expanded') === 'true';
@@ -167,7 +187,7 @@ function openEditor(kind, id) {
   if (!editable) form.querySelector('[type="submit"]')?.remove();
   const preview = () => {
     if (kind !== 'product') return;
-    try { const p = pricing(Object.fromEntries(new FormData(form))); dialog.querySelector('#price-preview').textContent = `Customer pays ${money(p.customerCents)} · Saving ${money(p.savingCents)}. All amounts include VAT. Rebates and commission are separate.`; }
+    try { const p = pricing(Object.fromEntries(new FormData(form))); dialog.querySelector('#price-preview').textContent = `Customer pays ${money(p.customerCents)} · Saving ${money(p.savingCents)}. All amounts include VAT. No additional vendor commission.`; }
     catch (error) { dialog.querySelector('#price-preview').textContent = error.message; }
   };
   form.addEventListener('input', preview); preview();
@@ -181,18 +201,31 @@ function openEditor(kind, id) {
       let result;
       if (kind === 'image') {
         const file = values.image;
-        const extensions = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
-        if (!extensions[file.type] || !file.size || file.size > 5242880) throw new Error('Choose a JPEG, PNG or WebP picture no larger than 5 MB.');
-        const path = `${id}/${crypto.randomUUID()}.${extensions[file.type]}`;
+        const extension = catalogueImageExtension(file);
+        const path = `${id}/${crypto.randomUUID()}.${extension}`;
         const upload = await db.storage.from('paysme-voucher-products').upload(path, file, { contentType: file.type, upsert: false });
         if (upload.error) throw upload.error;
         result = await db.from('paysme_voucher_product_images').insert({ product_id: id, object_path: path, alt_text: values.alt_text.trim() });
         if (result.error) throw new Error('The picture uploaded, but its catalogue record could not be saved. Ask an administrator to review storage before retrying.');
       } else {
         let payload = { ...values, active: values.active === 'true' };
+        delete payload.logo;
         Object.keys(payload).forEach(k => { if (typeof payload[k] === 'string') payload[k] = payload[k].trim(); });
-        if (kind === 'supplier') Object.assign(payload, approvalEmails(values.finance_email, values.supervisor_email));
+        if (kind === 'supplier') {
+          Object.assign(payload, approvalEmails(values.finance_email, values.supervisor_email));
+          if (values.logo?.size) {
+            const extension = catalogueImageExtension(values.logo);
+            const supplierId = id || crypto.randomUUID();
+            const path = `suppliers/${supplierId}/${crypto.randomUUID()}.${extension}`;
+            const upload = await db.storage.from('paysme-voucher-products').upload(path, values.logo, { contentType: values.logo.type, upsert: false });
+            if (upload.error) throw upload.error;
+            payload.logo_path = path;
+            if (!id) payload.id = supplierId;
+          }
+        }
+        if (kind === 'branch' && !state.towns.some(t=>t.name===payload.town)) throw new Error('Select a town from the list.');
         if (kind === 'product') {
+          values.commission = '0';
           const p = pricing(values);
           for (const name of ['supplier', 'markup', 'instore', 'rebate', 'commission', 'redemption_value']) delete payload[name];
           const creditValue = values.entitlement_type === 'store_credit' ? toCents(values.redemption_value) : null;

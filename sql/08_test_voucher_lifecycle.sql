@@ -5,7 +5,7 @@ declare
  attempt integer; actor uuid; supplier uuid; other_supplier uuid; branch uuid; product uuid;
  sale1 jsonb; sale2 jsonb; sale3 jsonb; batch jsonb; out jsonb; receipt jsonb;
  args jsonb; batch_id uuid; verify_id uuid; token text:=repeat('a',64); key text:=repeat('b',64);
- blocked boolean;
+ blocked boolean; proof text; payment uuid;
 begin
  select auth_user_id into actor from public.admin_users where role='super_admin' and is_active and setup_status='active' limit 1;
  if actor is null then raise exception 'Existing super administrator required'; end if;
@@ -24,15 +24,26 @@ begin
  sale2:=public.paysme_voucher_command('record_paid_sale',args||jsonb_build_object('payment_reference','pilot-2','request_key',gen_random_uuid()));
  batch:=public.paysme_voucher_command('prepare_batch',jsonb_build_object('actor_id',actor,'supplier_id',supplier,'cutoff_at',now()));
  batch_id:=(batch->>'id')::uuid;
+ proof:=batch_id::text||'/'||gen_random_uuid()::text||'.pdf';
+ blocked:=false;
+ begin perform public.paysme_voucher_command('record_payment',jsonb_build_object('actor_id',actor,'batch_id',batch_id,'bank_reference','pilot-no-proof','amount_cents',100000)); exception when others then blocked:=true; end;
+ if not blocked then raise exception 'FAIL payment without proof accepted'; end if;
+ insert into storage.objects(bucket_id,name,metadata) values('paysme-voucher-payment-proofs',proof,'{"mimetype":"application/pdf","size":100}'::jsonb);
  if (batch->>'amount_due_cents')::bigint<>100000 or (batch->>'voucher_count')::int<>2 then raise exception 'FAIL batch total'; end if;
  sale3:=public.paysme_voucher_command('record_paid_sale',args||jsonb_build_object('payment_reference','pilot-3','request_key',gen_random_uuid()));
- perform public.paysme_voucher_command('record_payment',jsonb_build_object('actor_id',actor,'batch_id',batch_id,'bank_reference','pilot-bank-1','amount_cents',49000));
+ perform public.paysme_voucher_command('record_payment',jsonb_build_object('actor_id',actor,'batch_id',batch_id,'bank_reference','pilot-bank-1','amount_cents',49000,'proof_object_path',proof));
  blocked:=false;
  begin perform public.paysme_voucher_command('start_confirmation',jsonb_build_object('actor_id',actor,'batch_id',batch_id,'token',token));
  exception when others then blocked:=true; end;
  if not blocked then raise exception 'FAIL partial payment released confirmation'; end if;
- perform public.paysme_voucher_command('record_payment',jsonb_build_object('actor_id',actor,'batch_id',batch_id,'bank_reference','pilot-bank-2','amount_cents',51000));
- out:=public.paysme_voucher_command('record_payment',jsonb_build_object('actor_id',actor,'batch_id',batch_id,'bank_reference','pilot-bank-2','amount_cents',51000));
+ perform public.paysme_voucher_command('record_payment',jsonb_build_object('actor_id',actor,'batch_id',batch_id,'bank_reference','pilot-bank-2','amount_cents',51000,'proof_object_path',proof));
+ out:=public.paysme_voucher_command('record_payment',jsonb_build_object('actor_id',actor,'batch_id',batch_id,'bank_reference','pilot-bank-2','amount_cents',51000,'proof_object_path',proof));
+ update public.paysme_voucher_batch_payments set proof_object_path=null where bank_transaction_reference='pilot-bank-2' returning id into payment;
+ blocked:=false;
+ begin perform public.paysme_voucher_command('start_confirmation',jsonb_build_object('actor_id',actor,'batch_id',batch_id,'token',token)); exception when others then blocked:=true; end;
+ if not blocked then raise exception 'FAIL confirmation without every POP accepted'; end if;
+ perform public.paysme_voucher_command('attach_payment_proof',jsonb_build_object('actor_id',actor,'batch_id',batch_id,'payment_id',payment,'proof_object_path',proof));
+ if (select sum(pay.amount_cents) from public.paysme_voucher_batch_payments pay where pay.batch_id=(batch->>'id')::uuid)<>100000 or (select count(*) from public.paysme_voucher_batch_payments pay where pay.batch_id=(batch->>'id')::uuid)<>2 then raise exception 'FAIL POP attachment changed bank payment totals'; end if;
  if out->>'replayed'<>'true' then raise exception 'FAIL payment idempotency'; end if;
  perform public.paysme_voucher_command('start_confirmation',jsonb_build_object('actor_id',actor,'batch_id',batch_id,'token',token));
  perform public.paysme_voucher_command('report_discrepancy',jsonb_build_object('token',token,'reason','reference_mismatch','comment','Check reference'));

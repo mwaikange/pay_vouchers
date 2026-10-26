@@ -1,6 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { toCents, pricing, approvalEmails, normalizeMobile } from '../src/domain.mjs';
+import { toCents, pricing, approvalEmails, normalizeMobile, catalogueImageExtension } from '../src/domain.mjs';
+
+test('supplier logos and product pictures accept only nonempty supported images up to 5 MB', () => {
+  assert.equal(catalogueImageExtension({ type: 'image/png', size: 100 }), 'png');
+  assert.equal(catalogueImageExtension({ type: 'image/jpeg', size: 5242880 }), 'jpg');
+  assert.equal(catalogueImageExtension({ type: 'image/webp', size: 100 }), 'webp');
+  for (const file of [{ type: 'image/svg+xml', size: 100 }, { type: 'image/png', size: 0 }, { type: 'image/png', size: 5242881 }]) assert.throws(() => catalogueImageExtension(file));
+});
 test('agreed example: supplier 500, markup 20, store 600, customer saves 80', () => {
   const p = pricing({ supplier: '500', markup: '20', instore: '600', rebate: '10', commission: '5' });
   assert.equal(p.customerCents, 52000); assert.equal(p.savingCents, 8000);

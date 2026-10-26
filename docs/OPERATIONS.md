@@ -27,7 +27,7 @@ Finance reports payment not received, amount mismatch, reference mismatch or ano
 
 Issue a supplier server credential, optionally restricted to a store. The supplier verifies the voucher, checks the physical ID or completes both recipient OTPs, redeems once and prints the returned receipt. The receipt is immutable; retries and reprints do not consume additional funding. See [supplier API](SUPPLIER_API.md).
 
-The public staff screens do not permit identity-data edits, verification overrides, batch membership edits, direct voucher activation or manual marking of a sale as paid. Paid-sale registration is an internal-only database operation reserved for the final atomic Vendor wallet integration. There is no exposed Edge route that can fabricate a paid sale.
+The public staff screens do not permit identity-data edits, verification overrides, batch membership edits, direct voucher activation or manual marking of a sale as paid. The authenticated Vendor purchase action atomically debits its existing Utilities wallet and creates the sale/voucher/history. It pays no extra commission because the vendor already benefits from the account top-up discount. Staff and supplier routes cannot fabricate a paid sale. See [Vendor integration](VENDOR_INTEGRATION.md).
 
 ## Monitoring and checks
 
@@ -37,7 +37,7 @@ Run `sql/09_verify_operations.sql` for read-only deployment checks and `sql/08_t
 
 Identity fingerprints use a random database-private HMAC key. Raw ID numbers are never stored in voucher tables. Recipient contact snapshots and OTP/token digests are in a private schema without API grants or client RLS policies. The private schema's informational 'RLS enabled, no policy' advisory is intentional deny-by-default behavior. Never grant browser access to these tables.
 
-No production supplier notification has been sent during development. A real email/SMS delivery pilot and browser/printer checks are still required before a live launch. Vendor app changes and wallet debits remain the explicitly separate integration work. Third-party VAS customer histories are outside this voucher programme and must not be imported into these customer views.
+No production supplier notification has been sent during development. A real email/SMS delivery pilot and physical-device/printer checks remain. New Vendor voucher purchases link customer, sale and Utilities history atomically. Historical utility backfill and promotional audiences remain separate. The purchase code is shown in the app and history; this change does not send purchase SMS/email.
 
 ## Customer and company views
 
@@ -47,3 +47,7 @@ Sales, Settlements and Reports default to All companies. Selecting a company app
 
 The additional read-only migration is sql/10_voucher_customer_company_views.sql (already applied). sql/11_test_customer_company_views.sql is its complete rollback-only integration test. No wallet, Vendor app or existing transaction-writing function is modified by this change.
 
+
+## Proof of payment and resending
+
+Record bank payments with a PDF, JPEG, PNG or WebP POP up to 5 MB. For older payments, use Upload POP beside the existing bank reference; do not enter another payment. Full payment and a POP for every payment are required before Send confirmation becomes available. Resolve open disputes first. Until OTP confirmation settles the batch, finance confirmation can be resent. Each resend revokes earlier links; use the newest email and request a fresh supervisor code. POPs are private attachments in finance and supervisor emails, with temporary viewing links on the confirmation page. SMTP acceptance is distinct from inbox delivery; check Spam/Junk if a message is accepted but absent.

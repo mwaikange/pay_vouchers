@@ -36,7 +36,7 @@ Supplier500 + PaySME markup20 = customer520. A store reference600 gives an80 sav
 
 ## Integration boundary
 
-The Vendor app, wallets and utilities tables remain unchanged. Paid-sale creation is an internal-only database operation; no staff or supplier Edge route can create a paid sale. The final Vendor integration must atomically debit its existing wallet ledger and register the sale/voucher with an idempotency key. Customer records in this portal are for PaySME vouchers only. Electricity, water, airtime and other third-party VAS products are outside this programme; do not import their purchase history into this directory.
+The Vendor app purchase integration is maintained in `mwaikange/paysme_vendor_app`. It atomically debits the existing Utilities wallet, creates the sale/voucher, and links its Utilities history using one retry reference. No additional vendor commission is paid because the vendor already benefits from the account top-up discount. Both interfaces use active names from `namibian_towns` for town selection. Staff and supplier Edge routes still cannot fabricate paid sales. Historical utility backfill and promotional audiences remain separate. See [Vendor integration](docs/VENDOR_INTEGRATION.md).
 
 ## Customer and company views
 

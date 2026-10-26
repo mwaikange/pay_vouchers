@@ -1,5 +1,7 @@
 # Verification status — 23 October 2026
 
+Vendor integration update: supplier → product → recipient purchase is implemented, using the existing Utilities wallet with zero extra commission. Towns are selected from `namibian_towns` in both interfaces. Supplier logo upload and product pictures flow through to the app. The database migrations are applied and `vendor-utilities` version 68 is deployed with JWT verification retained. Wallet rollback tests and the existing settlement/redemption lifecycle suite passed. All 61 targeted Vendor/API/screen tests passed; portal tests passed 16 with one environment-only localhost skip. The Android export and portal build passed. App/portal source release and physical-device checks remain. No real purchase or notification was made. See [Vendor handover](VENDOR_INTEGRATION.md).
+
 Applied to the existing PaySME database:
 - Existing admin_users staff authorization, without creating or changing staff accounts.
 - Voucher lifecycle tables, private recipient/identity/challenge storage, server-only transactional operations, staff read policies and reporting.
@@ -16,7 +18,7 @@ Passed:
 
 Not yet verified: actual browser login/rendering/image upload, external supplier finance/supervisor email delivery, recipient SMS/email delivery, physical printing and parallel stress testing. No production notification was sent. Hosting for public supplier links remains to be configured; the staff portal can be reviewed on localhost.
 
-The Vendor app, its wallets and utilities tables remain untouched. The final wallet purchase and utility-customer integration is a separate next step after portal review. Paid-sale creation is not exposed through the Edge API.
+The earlier portal-only phase left Vendor wallets untouched. The final Vendor purchase phase now uses a separate authenticated Vendor action to debit Utilities and register the sale atomically; staff/supplier paid-sale creation remains unavailable. Historical utility backfill and promotional audiences remain separate work.
 
 Local preview started and retained at http://127.0.0.1:4173. The server reported a successful bind; this runtime blocks outbound localhost sockets, so HTTP/browser verification from the agent remains unavailable.
 
@@ -28,3 +30,5 @@ Customer/company view update (23 October 2026):
 - Rollback-only staff/RLS test passed for two companies, cross-company customer history, VAS exclusion, mobile masking, pagination and per-company amounts/redemptions/planning. All fixtures rolled back.
 - Local suite:21 passed,0 failed,0 skipped; static build and syntax checks passed. New function security-advisor findings:none.
 - Browser interaction and production Vercel deployment of this update remain unverified.
+
+Payment confirmation update (26 October 2026): required private POP upload, attachment emails, separate bank-paid/batch/customer totals and existing-payment POP repair are implemented. The database migrations are applied and paysme-vouchers version 3 is deployed. Full rollback-only lifecycle checks passed, including legacy missing POP, attach without duplicate payment, and OTP release. Actual finance/supervisor inbox delivery remains to be tested.
