@@ -1,4 +1,5 @@
-import {salesPage,settlementsPage,reportsPage,bindOperations,showConfirmation} from './operations.js';
+import {salesPage,settlementsPage,reportsPage,bindOperations,showConfirmation,companySelector,command} from './operations.js';
+import {prepaidPage,bindPrepaid,supplierFundingFields,bindSupplierFunding,initialPrepayment} from './prepaid.js';
 import {customersPage,bindCustomers,customerRoute} from './customers.js';
 import { approvalEmails, pricing, money, toCents, catalogueImageExtension } from './domain.mjs';
 
@@ -8,7 +9,7 @@ const url = config.supabaseUrl;
 const key = config.supabaseAnonKey;
 const createClient = globalThis.supabase?.createClient;
 const db = url && key && createClient ? createClient(url, key, { auth: { storageKey: 'paysme-vouchers-staff-auth' } }) : null;
-const state = { page: customerRoute(location.hash) ? 'customers' : 'overview', staff: null, suppliers: [], products: [], branches: [], customers: [], images: [], notice: '', companyId: '', companies: [], financeLoading: false, customerId: customerRoute(location.hash), customerRecord: null, customerBusy: false, customerError: '', towns: [] };
+const state = { page: customerRoute(location.hash) ? 'customers' : 'overview', staff: null, suppliers: [], products: [], branches: [], customers: [], images: [], notice: '', companyId: '', companies: [], financeLoading: false, customerId: customerRoute(location.hash), customerRecord: null, customerBusy: false, customerError: '', towns: [], creditAccounts: [], creditSupplierId:null,creditStatement:null,creditBusy:false,creditError:'' };
 let generation = 0;
 const confirmationToken=new URLSearchParams(location.hash.slice(1)).get('confirm');
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -68,7 +69,7 @@ async function loadWorkspace() {
       await db.auth.signOut(); showLogin('Your account does not have active PaySME Vouchers staff access.'); return;
     }
     const scoped = query => state.companyId ? query.eq('supplier_id',state.companyId) : query;
-    const tables = ['suppliers', 'products', 'branches', 'customerDirectory', 'images','sales','vouchers','batches','redemptions','analytics','companies','towns'];
+    const tables = ['suppliers', 'products', 'branches', 'customerDirectory', 'images','sales','vouchers','batches','redemptions','analytics','companies','towns','creditAccounts'];
     const results = await Promise.all([
       db.from('paysme_voucher_suppliers').select('*').order('created_at', { ascending: false }).limit(250),
       db.from('paysme_voucher_products').select('*').order('created_at', { ascending: false }).limit(250),
@@ -81,7 +82,8 @@ async function loadWorkspace() {
       scoped(db.from('paysme_voucher_redemptions').select('*').order('redeemed_at',{ascending:false})).limit(1000),
       db.rpc('paysme_voucher_company_overview',{p_supplier_id:state.companyId||null}),
       db.rpc('paysme_voucher_companies'),
-      db.from('namibian_towns').select('name').eq('is_active',true).order('name').limit(1000)
+      db.from('namibian_towns').select('name').eq('is_active',true).order('name').limit(1000),
+      scoped(db.from('paysme_voucher_credit_accounts').select('*').order('supplier_name')).limit(1000)
     ]);
     if (current !== generation) return;
     for (const result of results) if (result.error) throw result.error;
@@ -114,9 +116,9 @@ function products() {
 }
 function customers() { return customersPage(state); }
 function render() {
-  const pages = { overview, suppliers, products, customers, sales:()=>salesPage(state), settlements:()=>settlementsPage(state), reports:()=>reportsPage(state) };
+  const pages = { overview, suppliers, products, customers, sales:()=>salesPage(state), settlements:()=>settlementsPage(state), reconciliation:()=>companySelector(state)+prepaidPage(state), reports:()=>reportsPage(state) };
   root.innerHTML = `<div class="workspace"><aside><div class="brand">P<span>▰</span> PaySME<small>VOUCHERS</small></div><div class="nav-label">WORKSPACE</div><nav>${Object.keys(pages).map(page => `<button data-page="${page}" class="${state.page === page ? 'selected' : ''}">${{ overview: '◈', suppliers: '▦', products: '▱', customers: '◎' }[page]||'•'} <span>${page[0].toUpperCase() + page.slice(1)}</span></button>`).join('')}</nav><div class="sidebar-note"><b>Made for everyday value.</b><p>Powered by PaySME</p></div></aside><div class="content"><header><div><span class="eyebrow">PAYSME VOUCHERS</span><h1>${state.page[0].toUpperCase() + state.page.slice(1)}</h1></div><div class="account"><span><b>${esc(state.staff.display_name)}</b><small>${esc(state.staff.role)}</small></span><button class="secondary" id="signout">Sign out</button></div></header><main><p class="currency-note">All monetary amounts are in N$ and inclusive of VAT. No additional VAT is added.</p>${state.notice ? `<p class="notice" role="status">${esc(state.notice)}</p>` : ''}${pages[state.page]()}</main></div></div>`;
-  document.querySelectorAll('[data-page]').forEach(button => { button.onclick = () => { state.page = button.dataset.page; state.notice = ''; if(state.page !== 'customers') { state.customerId=null; state.customerRecord=null; state.customerBusy=false; state.customerError=''; if(location.hash.startsWith('#customer')) history.replaceState(null,'',location.pathname+location.search); } render(); }; });
+  document.querySelectorAll('[data-page]').forEach(button => { button.onclick = () => { state.page = button.dataset.page; state.notice = ''; if(state.page !== 'customers') { state.customerId=null; state.customerRecord=null; state.customerBusy=false; state.customerError=''; if(location.hash.startsWith('#customer')) history.replaceState(null,'',location.pathname+location.search); } if(state.page==='reconciliation'){state.creditStatement=null;state.creditBusy=false;state.creditError='';state.financeLoading=true;render();void loadWorkspace();return;} render(); }; });
   document.querySelectorAll('[data-action]').forEach(button => {
     if (button.dataset.action === 'supplier' && !canManageSuppliers()) {
       if (button.dataset.id) button.textContent = 'View'; else button.disabled = true;
@@ -125,21 +127,27 @@ function render() {
   });
   bindOperations({db,state,reload:loadWorkspace});
   bindCustomers({db,state,render});
+  bindPrepaid({db,state,render,reload:loadWorkspace,command,bindBatch:()=>bindOperations({db,state,reload:loadWorkspace})});
   document.querySelector('[data-company-filter]')?.addEventListener('change',async event=>{
     state.companyId=event.currentTarget.value;
+    state.creditSupplierId=null;state.creditStatement=null;state.creditBusy=false;state.creditError='';
     state.financeLoading=true;render();
     await loadWorkspace();
   });
-  document.querySelector('#signout').onclick = async () => { generation++; state.staff = null; state.notice = ''; state.companyId=''; state.customerId=null; state.customerRecord=null; state.customerDirectory=null; state.customerBusy=false; state.customerError=''; state.sales=[]; state.vouchers=[]; state.batches=[]; state.redemptions=[]; state.analytics=null; state.companies=[]; state.suppliers = []; state.products = []; state.customers = []; state.branches = []; state.images = []; await db.auth.signOut(); showLogin(); };
+  document.querySelector('#signout').onclick = async () => { generation++; state.staff = null; state.notice = ''; state.companyId=''; state.customerId=null; state.customerRecord=null; state.customerDirectory=null; state.customerBusy=false; state.customerError=''; state.creditAccounts=[];state.creditSupplierId=null;state.creditStatement=null;state.creditDeliveries=null;state.creditReports=[];state.creditBusy=false;state.creditError='';state.sales=[]; state.vouchers=[]; state.batches=[]; state.redemptions=[]; state.analytics=null; state.companies=[]; state.suppliers = []; state.products = []; state.customers = []; state.branches = []; state.images = []; await db.auth.signOut(); showLogin(); };
 }
 
-function openEditor(kind, id) {
+async function openEditor(kind, id) {
   let data = {}, body = '', table = '';
+  const editorSupplierId=kind==='supplier'?(id||crypto.randomUUID()):null;
+  const initialPaymentId=crypto.randomUUID();let existingPrepaidAccount;
+  if(kind==='supplier'&&id){const {data:account,error}=await db.from('paysme_voucher_credit_accounts').select('*').eq('supplier_id',id).maybeSingle();if(error){state.notice=error.message;render();return;}existingPrepaidAccount=account;}
   const supplierOptions = state.suppliers.map(s => [s.id, s.business_name]);
   if (kind === 'supplier') {
     data = state.suppliers.find(s => s.id === id) || {}; table = 'paysme_voucher_suppliers';
     body = field('Business name', 'business_name', data.business_name, 'text', true) + field('Registration number', 'registration_number', data.registration_number) + field('Finance contact name', 'finance_contact_name', data.finance_contact_name, 'text', true) + field('Finance confirmation email', 'finance_email', data.finance_email, 'email', true) + field('Supervisor name', 'supervisor_name', data.supervisor_name, 'text', true) + field('Supervisor approval email', 'supervisor_email', data.supervisor_email, 'email', true) + field('Operational contact email', 'support_email', data.support_email, 'email') + statusField(data.active) + textArea('Settlement terms / notes', 'settlement_terms', data.settlement_terms);
     const logoUrl = data.logo_path && db.storage.from('paysme-voucher-products').getPublicUrl(data.logo_path).data.publicUrl;
+    body += supplierFundingFields(data);
     body += `<section class="wide supplier-logo-upload"><label>Supplier logo (optional)<input name="logo" type="file" accept="image/jpeg,image/png,image/webp"></label><p class="muted">JPEG, PNG or WebP, up to 5 MB. Shown to vendors when selecting this supplier.</p>${logoUrl ? `<img src="${esc(logoUrl)}" alt="${esc(data.business_name || 'Supplier')} logo" width="100" height="100" style="object-fit:contain">` : ''}<img id="supplier-logo-preview" alt="Selected supplier logo" width="100" height="100" style="object-fit:contain" hidden></section>`;
   } else if (kind === 'branch') {
     data = state.branches.find(b => b.id === id) || {}; table = 'paysme_voucher_branches';
@@ -160,6 +168,7 @@ function openEditor(kind, id) {
   dialog.querySelector('#close-editor').onclick = close; dialog.querySelector('#cancel-editor').onclick = close;
   const form = dialog.querySelector('form');
   if (kind === 'supplier') {
+    bindSupplierFunding(form,data,existingPrepaidAccount);
     let previewUrl;
     form.elements.logo.onchange = () => {
       const image = dialog.querySelector('#supplier-logo-preview');
@@ -213,9 +222,12 @@ function openEditor(kind, id) {
         Object.keys(payload).forEach(k => { if (typeof payload[k] === 'string') payload[k] = payload[k].trim(); });
         if (kind === 'supplier') {
           Object.assign(payload, approvalEmails(values.finance_email, values.supervisor_email));
+          payload.daily_reconciliation_enabled=form.elements.daily_reconciliation_enabled.checked;
+          payload.prepaid_low_balance_cents=toCents(values.prepaid_threshold);
+          for(const name of ['prepaid_threshold','initial_bank_reference','initial_amount','initial_proof','initial_notes'])delete payload[name];
           if (values.logo?.size) {
             const extension = catalogueImageExtension(values.logo);
-            const supplierId = id || crypto.randomUUID();
+            const supplierId = editorSupplierId;
             const path = `suppliers/${supplierId}/${crypto.randomUUID()}.${extension}`;
             const upload = await db.storage.from('paysme-voucher-products').upload(path, values.logo, { contentType: values.logo.type, upsert: false });
             if (upload.error) throw upload.error;
@@ -233,10 +245,14 @@ function openEditor(kind, id) {
           payload.redemption_value_cents = creditValue;
           Object.assign(payload, { supplier_price_cents: p.supplierCents, markup_cents: p.markupCents, instore_price_cents: p.instoreCents, rebate_cents: p.rebateCents, vendor_commission_cents: p.commissionCents });
         }
-        result = id ? await db.from(table).update(payload).eq('id', id).select('id').single() : await db.from(table).insert(payload).select('id').single();
+        if(kind==='supplier'){
+          delete payload.id;
+          const initial=await initialPrepayment({db,form,prepaymentId:initialPaymentId});
+          result=await command(db,'save_supplier',{supplier_id:editorSupplierId,supplier:payload,initial_prepayment:initial,portal_url:location.origin+location.pathname});
+        }else result = id ? await db.from(table).update(payload).eq('id', id).select('id').single() : await db.from(table).insert(payload).select('id').single();
         if (result.error) throw result.error;
       }
-      state.notice = 'Saved successfully.'; close(); await loadWorkspace();
+      state.notice = result?.message||'Saved successfully.'; close(); await loadWorkspace();
     } catch (error) { errorBox.textContent = error.message; saveButton.disabled = false; }
   };
 }

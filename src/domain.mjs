@@ -44,7 +44,13 @@ export function paymentProofExtension(file) {
   return extensions[file.type];
 }
 
-export function confirmationReadiness(batch,payments) {
+export function confirmationReadiness(batch,payments,paysmeFunds={},reservations=[]) {
+  if(batch.payment_model==='prepaid'){
+    // PaySME's asset held with the retailer; never a Vendor wallet or supplier deposit with PaySME.
+    const ownReservation=reservations.find(r=>r.status==='reserved');
+    const covered=ownReservation?Number(ownReservation.amount_cents)===Number(batch.amount_due_cents):Number(paysmeFunds.available_cents)>=Number(batch.amount_due_cents);
+    return {paidCents:0,ready:covered&&Number(paysmeFunds.open_batch_issues||0)===0&&!['disputed','settled'].includes(batch.status),reservedCents:Number(ownReservation?.amount_cents||0),hasReservation:Boolean(ownReservation)};
+  }
   const paidCents=payments.reduce((sum,payment)=>sum+Number(payment.amount_cents),0);
   return {paidCents,ready:payments.length>0&&Number.isSafeInteger(paidCents)&&paidCents>=Number(batch.amount_due_cents)&&payments.every(payment=>Boolean(payment.proof_object_path))&&!['disputed','settled'].includes(batch.status)};
 }

@@ -1,4 +1,4 @@
-export const STAFF_ACTIONS = new Set(['prepare_batch','record_payment','attach_payment_proof','start_confirmation','resolve_discrepancy','issue_api_key','revoke_api_key']);
+export const STAFF_ACTIONS = new Set(['prepare_batch','record_payment','attach_payment_proof','start_confirmation','resolve_discrepancy','issue_api_key','revoke_api_key','save_supplier','record_prepayment','start_prepayment_confirmation','resolve_credit_discrepancy','amend_prepayment','release_prepaid_reservation']);
 export const CONFIRM_ACTIONS = new Set(['confirmation_details','confirmation_otp','confirm_batch','report_discrepancy']);
 export const SUPPLIER_ACTIONS = new Set(['verify_voucher','validate_id','request_recipient_otp','validate_recipient_otp','redeem_voucher','get_receipt']);
 export const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));

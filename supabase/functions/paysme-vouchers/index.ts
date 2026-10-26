@@ -16,7 +16,7 @@ async function sendEmail(to:string,subject:string,html:string,attachments:any[]=
  const client=new SMTPClient({connection:{hostname:Deno.env.get('SMTP_HOST')!,port,tls,auth:{username:Deno.env.get('SMTP_USERNAME')!,password:Deno.env.get('SMTP_PASSWORD')!}},client:{warning:'error'}});
  try {
   await client.send({from:`${Deno.env.get('SMTP_FROM_NAME')||'PaySME'} <${Deno.env.get('SMTP_FROM_EMAIL')}>`,to,subject,content:'auto',html,attachments,replyTo:Deno.env.get('SMTP_REPLY_TO')||'support@paysme.site'});
-  console.info('Voucher email accepted by SMTP',{event_id:eventId,kind:subject.startsWith('PaySME supervisor')?'supervisor_approval':'voucher_notification',recipient_hint:emailHint(to),attachment_count:attachments.length});
+  console.info('Voucher email accepted by SMTP',{event_id:eventId,kind:subject.startsWith('PaySME supervisor')?'supervisor_approval':subject.startsWith('PaySME daily')?'daily_reconciliation':'voucher_notification',recipient_hint:emailHint(to),attachment_count:attachments.length});
  } catch(error) {
   console.error('Voucher email rejected by SMTP',{event_id:eventId,smtp_code:String(error?.message||'').match(/\b[245][0-9]{2}\b/)?.[0]||null});
   throw new Error('The mail server did not accept the email. Please retry after the cooldown or contact PaySME.');
@@ -27,4 +27,5 @@ async function sendSms(mobile:string,content:string) {
  if(!response.ok)throw new Error('SMS service unavailable');
  const result=await response.json();if(result.error||result.success===false)throw new Error('SMS not accepted');
 }
-Deno.serve(createHandler({db,sendEmail,sendSms,loadProofAttachments:payments=>loadPaymentProofs(db,payments),proofLinks:payments=>signedPaymentProofs(db,payments)}));
+const runtime=(globalThis as any).EdgeRuntime;
+Deno.serve(createHandler({db,sendEmail,sendSms,backgroundTask:runtime?.waitUntil?.bind(runtime),loadProofAttachments:payments=>loadPaymentProofs(db,payments),proofLinks:payments=>signedPaymentProofs(db,payments)}));

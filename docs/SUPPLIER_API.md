@@ -52,3 +52,10 @@ The API supplies authoritative receipt fields. The supplier controls printer dri
 All customer support goes to PaySME (`support@paysme.site`). Supplier credentials are unrelated to the two email contacts used for batch payment confirmation. No supplier staff portal account is needed.
 
 The base endpoint also accepts `{ "action": "verify_voucher", "args": { ... } }` for existing clients. Dedicated supplier paths override any action supplied in the body. Staff and supplier actions are individually authenticated by the handler. Platform JWT verification is disabled because supplier keys and confirmation tokens are not Supabase user JWTs; this does not grant unauthenticated access to staff or supplier operations.
+
+
+## Cash and prepaid funding
+
+The same six endpoints support both supplier payment models. On prepaid terms, PaySME owns prepaid funds held with the supplier. PaySME checks its own available funds before emailing a batch review; the supplier reviews each batch and uses a supervisor OTP before vouchers become redeemable. Initial PaySME prepayments and top-ups have separate POP/amount approval. Suppliers can report a balance mismatch from the emailed link. There is no requirement to verify new bank details for a prepaid batch, create supplier portal accounts or build a separate approval system.
+
+A voucher in an approved prepaid batch has already been charged against PaySME’s funds, even while unredeemed. Redemption consumes the voucher’s batch allocation once and never charges the prepaid balance again. Vendor sales remain funded by their own existing Utilities wallets, independently of PaySME’s funds with the supplier. When a batch releases vouchers, a buyer SMS is queued with the code and requested collection location. Requested branches in daily planning are customer intentions, separate from the actual redemption branch captured by this API.

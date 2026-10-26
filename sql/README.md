@@ -16,3 +16,5 @@ Migration history: the foundation was applied manually before connector access a
 
 
 Voucher customer/company views were applied through migration 20261023150601_voucher_customer_company_views. Script10 is the SQL Editor copy; do not rerun it. Script11 tests voucher-only membership, customer pagination, per-company finance totals and staff authorization using rollback-only fixtures. The existing overview RPC and all transaction-writing functions are unchanged.
+
+Prepaid release: migration 20261026180906_voucher_prepaid_accounts is applied. SQL12 adds PaySME-owned funds held with suppliers, SQL13 adds reconciliation and notification delivery, and SQL15 adds paginated staff batch records. For a fresh installation apply 12, 13, then 15 after existing migrations. SQL14 is the rollback-only integration test. The canonical migration validated SQL14, the existing lifecycle suite08 and customer/company suite11 inside savepoints before committing the schema; all fixtures rolled back. Do not reapply numbered scripts to this shared project.
